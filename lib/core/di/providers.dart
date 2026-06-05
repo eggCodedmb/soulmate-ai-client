@@ -1,0 +1,38 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../network/websocket_service.dart';
+import '../storage/database/app_database.dart';
+
+/// 安全存储Provider
+final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
+  return const FlutterSecureStorage();
+});
+
+/// 数据库Provider
+final databaseProvider = Provider<AppDatabase>((ref) {
+  final db = AppDatabase();
+  ref.onDispose(db.close);
+  return db;
+});
+
+/// WebSocket服务Provider
+final webSocketServiceProvider = Provider<WebSocketService>((ref) {
+  final service = WebSocketService();
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+/// 主题模式Provider
+final themeModeProvider = StateProvider<String>((ref) {
+  return 'system'; // 'system' / 'light' / 'dark'
+});
+
+/// 当前伴侣ID Provider
+final currentPartnerIdProvider = StateProvider<String?>((ref) {
+  return null;
+});
+
+/// 是否已登录Provider
+final isLoggedInProvider = StateProvider<bool>((ref) {
+  return false;
+});

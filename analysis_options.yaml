@@ -1,0 +1,13 @@
+include: package:very_good_analysis/analysis_options.yaml
+
+linter:
+  rules:
+    public_member_api_docs: false
+    lines_longer_than_80_chars: false
+    flutter_style_todos: false
+    always_use_package_imports: false
+    prefer_int_literals: false
+    sort_constructors_first: false
+    directives_ordering: false
+    unnecessary_lambdas: false
+    sort_pub_dependencies: false
