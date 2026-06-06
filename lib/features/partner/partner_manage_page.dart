@@ -405,42 +405,15 @@ class _PartnerManagePageState extends ConsumerState<PartnerManagePage> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-              child: Row(
-                children: [
-                  Text(
-                    '共 ${_companions.length} 个伴侣',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.5)
-                          : Colors.black.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: _showCreatePartner,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.add_rounded,
-                          size: 18,
-                          color: AppColors.brandPink,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '新建',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.brandPink,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              child: Text(
+                '共 ${_companions.length} 个伴侣',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.5)
+                      : Colors.black.withValues(alpha: 0.4),
+                ),
               ),
             )
                 .animate()
@@ -766,9 +739,6 @@ class _PartnerManagePageState extends ConsumerState<PartnerManagePage> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                // 快捷操作按钮
-                _buildQuickActions(companion, isDark),
               ],
             ),
           ),
@@ -837,59 +807,6 @@ class _PartnerManagePageState extends ConsumerState<PartnerManagePage> {
         size: 28,
         color: Colors.white.withValues(alpha: 0.8),
       ),
-    );
-  }
-
-  Widget _buildQuickActions(Companion companion, bool isDark) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 聊天按钮
-        GestureDetector(
-          onTap: () => _startChat(companion),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.brandPink, Color(0xFFFF8FA8)],
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.brandPink.withValues(alpha: 0.25),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.chat_bubble_rounded,
-              color: Colors.white,
-              size: 18,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        // 详情箭头
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : Colors.black.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            Icons.arrow_forward_ios_rounded,
-            size: 14,
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.3)
-                : Colors.black.withValues(alpha: 0.25),
-          ),
-        ),
-      ],
     );
   }
 

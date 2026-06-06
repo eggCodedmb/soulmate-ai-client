@@ -7,6 +7,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/companion.dart';
+import '../../shared/widgets/soul_toast.dart';
 
 /// 伴侣编辑/创建页面（全屏）
 ///
@@ -180,15 +181,11 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('头像已更新')),
-        );
+        SoulToast.success(context, '头像已更新');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('上传失败: $e')),
-        );
+        SoulToast.error(context, '上传失败: $e');
       }
     } finally {
       if (mounted) setState(() => _isUploadingAvatar = false);
@@ -224,15 +221,11 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
       setState(() => _currentAvatarUrl = null);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('头像已移除')),
-        );
+        SoulToast.info(context, '头像已移除');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('移除失败: $e')),
-        );
+        SoulToast.error(context, '移除失败: $e');
       }
     } finally {
       if (mounted) setState(() => _isUploadingAvatar = false);
@@ -367,17 +360,14 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
       if (mounted) {
         widget.onSaved();
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_isCreateMode ? '伴侣创建成功！' : '伴侣信息已更新'),
-          ),
+        SoulToast.success(
+          context,
+          _isCreateMode ? '伴侣创建成功！' : '伴侣信息已更新',
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${_isCreateMode ? '创建' : '保存'}失败: $e')),
-        );
+        SoulToast.error(context, '${_isCreateMode ? '创建' : '保存'}失败: $e');
       }
     } finally {
       if (mounted) {
@@ -531,102 +521,115 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
   ) {
     return GestureDetector(
       onTap: _isUploadingAvatar ? null : _showAvatarOptions,
-      child: Stack(
-        children: [
-          // 呼吸光晕
-          Container(
-            width: 140,
-            height: 140,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: (isLight ? colors.light : colors.dark).withOpacity(0.5),
-              boxShadow: [
-                BoxShadow(
-                  color: (isLight ? colors.light : colors.dark).withOpacity(0.4),
-                  blurRadius: 30,
-                  spreadRadius: 8,
-                ),
-              ],
-            ),
-          ),
-          // 头像主体
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: scheme.primaryContainer,
-              border: Border.all(
-                color: Colors.white.withOpacity(0.3),
-                width: 3,
-              ),
-              boxShadow: AppShadows.level2(context),
-            ),
-            child: ClipOval(
-              child: avatarUrl != null && avatarUrl.isNotEmpty
-                  ? Image.network(
-                      ref.read(apiClientProvider).getFullUrl(avatarUrl),
-                      width: 120,
-                      height: 120,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Icon(
-                        Icons.favorite_rounded,
-                        size: 48,
-                        color: scheme.primary,
-                      ),
-                    )
-                  : Icon(
-                      Icons.favorite_rounded,
-                      size: 48,
-                      color: scheme.primary,
-                    ),
-            ),
-          ),
-          // 上传中遮罩
-          if (_isUploadingAvatar)
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.black.withOpacity(0.4),
-              ),
-              child: const Center(
-                child: SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          // 相机角标
-          if (!_isUploadingAvatar)
-            Positioned(
-              right: 4,
-              bottom: 4,
+      child: SizedBox(
+        width: 140,
+        height: 140,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // 呼吸光晕
+            Positioned.fill(
               child: Container(
-                width: 36,
-                height: 36,
                 decoration: BoxDecoration(
-                  color: scheme.primary,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: scheme.surface,
-                    width: 2.5,
-                  ),
-                  boxShadow: AppShadows.level1(context),
-                ),
-                child: Icon(
-                  Icons.camera_alt_rounded,
-                  size: 18,
-                  color: scheme.onPrimary,
+                  color: (isLight ? colors.light : colors.dark).withOpacity(0.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (isLight ? colors.light : colors.dark).withOpacity(0.4),
+                      blurRadius: 30,
+                      spreadRadius: 8,
+                    ),
+                  ],
                 ),
               ),
             ),
-        ],
+            // 头像主体（居中于 140x140）
+            Positioned(
+              left: 10,
+              top: 10,
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: scheme.primaryContainer,
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.3),
+                    width: 3,
+                  ),
+                  boxShadow: AppShadows.level2(context),
+                ),
+                child: ClipOval(
+                  child: avatarUrl != null && avatarUrl.isNotEmpty
+                      ? Image.network(
+                          ref.read(apiClientProvider).getFullUrl(avatarUrl),
+                          width: 120,
+                          height: 120,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.favorite_rounded,
+                            size: 48,
+                            color: scheme.primary,
+                          ),
+                        )
+                      : Icon(
+                          Icons.favorite_rounded,
+                          size: 48,
+                          color: scheme.primary,
+                        ),
+                ),
+              ),
+            ),
+            // 上传中遮罩
+            if (_isUploadingAvatar)
+              Positioned(
+                left: 10,
+                top: 10,
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black.withOpacity(0.4),
+                  ),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            // 相机角标（浮在头像右下角，不撑开布局）
+            if (!_isUploadingAvatar)
+              Positioned(
+                right: 2,
+                bottom: 2,
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: scheme.surface,
+                      width: 2.5,
+                    ),
+                    boxShadow: AppShadows.level1(context),
+                  ),
+                  child: Icon(
+                    Icons.camera_alt_rounded,
+                    size: 18,
+                    color: scheme.onPrimary,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

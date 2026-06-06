@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
@@ -6,6 +7,9 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/user.dart';
+import '../../shared/models/subscription.dart';
+import '../../shared/widgets/membership_badge.dart';
+import '../../shared/widgets/membership_card.dart';
 
 /// 个人中心页
 class ProfilePage extends ConsumerStatefulWidget {
@@ -17,27 +21,36 @@ class ProfilePage extends ConsumerStatefulWidget {
 
 class _ProfilePageState extends ConsumerState<ProfilePage> {
   User? _user;
+  List<SubscriptionPlan> _plans = [];
+  UserSubscription? _currentSubscription;
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadUserInfo();
+    _loadData();
   }
 
-  Future<void> _loadUserInfo() async {
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
     try {
       final apiService = ref.read(apiServiceProvider);
-      final user = await apiService.getUserInfo();
-      setState(() {
-        _user = user;
-      });
+      final results = await Future.wait([
+        apiService.getUserInfo(),
+        apiService.getSubscriptionPlans(),
+        apiService.getCurrentSubscription(),
+      ]);
+      if (mounted) {
+        setState(() {
+          _user = results[0] as User;
+          _plans = results[1] as List<SubscriptionPlan>;
+          _currentSubscription = results[2] as UserSubscription?;
+        });
+      }
     } catch (e) {
-      debugPrint('加载用户信息失败: $e');
+      debugPrint('加载数据失败: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -56,7 +69,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: _loadUserInfo,
+              onRefresh: _loadData,
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
@@ -113,21 +126,36 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isGuest
-                        ? AppColors.brandWarmPeach.withOpacity(0.1)
-                        : AppColors.brandPink.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    isGuest ? '游客账号' : '免费版',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: isGuest ? AppColors.brandWarmPeach : AppColors.brandPink,
+                if (isGuest)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.brandWarmPeach.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '游客账号',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: AppColors.brandWarmPeach,
+                      ),
+                    ),
+                  )
+                else if (_currentSubscription != null)
+                  _buildMemberBadgeFromSubscription()
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.brandPink.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '免费版',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: AppColors.brandPink,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -140,13 +168,22 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             onPressed: () async {
               final updated = await context.push<bool>('/profile/edit');
               if (updated == true) {
-                _loadUserInfo();
+                _loadData();
               }
             },
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildMemberBadgeFromSubscription() {
+    SubscriptionPlan? plan;
+    if (_currentSubscription != null) {
+      plan = _plans.where((p) => p.id == _currentSubscription!.planId).firstOrNull;
+    }
+    if (plan == null) return const SizedBox.shrink();
+    return MembershipBadge.fromPlanCode(planCode: plan.planCode, compact: true);
   }
 
   Widget _buildAvatar(BuildContext context) {
@@ -253,50 +290,22 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   }
 
   Widget _buildUpgradeCard(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.brandPink, AppColors.brandLavender],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: AppShadows.level2(context),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '✨ 升级会员',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '解锁无限对话',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => context.push('/profile/subscription'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: AppColors.brandPink,
-            ),
-            child: const Text('立即升级'),
-          ),
-        ],
-      ),
+    // 找到当前套餐
+    SubscriptionPlan? currentPlan;
+    if (_currentSubscription != null) {
+      currentPlan = _plans.where((p) => p.id == _currentSubscription!.planId).firstOrNull;
+    }
+
+    if (currentPlan == null) {
+      return MembershipCard.free(
+        onTap: () => context.push('/profile/subscription'),
+      );
+    }
+
+    return MembershipCard.member(
+      plan: currentPlan,
+      subscription: _currentSubscription!,
+      onTap: () => context.push('/profile/subscription'),
     );
   }
 
