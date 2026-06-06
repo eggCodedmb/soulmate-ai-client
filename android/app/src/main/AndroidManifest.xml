@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="soulmate_ai"
+        android:label="灵魂伴侣AI"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

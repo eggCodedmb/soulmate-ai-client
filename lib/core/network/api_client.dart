@@ -50,6 +50,15 @@ class ApiClient {
   Dio get dio => _dio;
   bool get isUsingFallback => _usingFallback;
   String get currentHost => _usingFallback ? fallbackHost : primaryHost;
+  String get currentBaseUrl => _usingFallback ? fallbackBaseUrl : primaryBaseUrl;
+
+  /// 将相对路径转为完整URL（用于图片等静态资源）
+  String getFullUrl(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    return '$currentBaseUrl${path.startsWith('/') ? '' : '/'}$path';
+  }
 
   /// 切换到备用地址
   void switchToFallback() {
@@ -158,3 +167,9 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 final dioProvider = Provider<Dio>((ref) {
   return ref.watch(apiClientProvider).dio;
 });
+
+/// 获取完整URL的工具方法（拼接base URL）
+String getFullUrl(WidgetRef ref, String path) {
+  final apiClient = ref.read(apiClientProvider);
+  return apiClient.getFullUrl(path);
+}

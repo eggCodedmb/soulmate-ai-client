@@ -29,16 +29,11 @@ class _SplashPageState extends ConsumerState<SplashPage>
       duration: const Duration(milliseconds: 1500),
     );
 
-    // Logo: 从 0.8 缩放至 1.0 + 淡入
-    _logoScale = Tween(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _logoController, curve: Curves.easeOutBack),
+    // Logo: 保持显示（从原生启动屏无缝衔接）+ 微调缩放
+    _logoScale = Tween(begin: 1.0, end: 1.1).animate(
+      CurvedAnimation(parent: _logoController, curve: Curves.easeOut),
     );
-    _logoOpacity = Tween(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _logoController,
-        curve: const Interval(0.0, 0.4),
-      ),
-    );
+    _logoOpacity = const AlwaysStoppedAnimation(1.0);
 
     // 文字: 延迟 400ms 后淡入 + 上移
     _textOpacity = Tween(begin: 0.0, end: 1.0).animate(
@@ -104,29 +99,15 @@ class _SplashPageState extends ConsumerState<SplashPage>
             mainAxisSize: MainAxisSize.min,
             children: [
               // Logo
-              FadeTransition(
-                opacity: _logoOpacity,
-                child: ScaleTransition(
-                  scale: _logoScale,
-                  child: Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 20,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      Icons.favorite_rounded,
-                      size: 48,
-                      color: isLight ? AppColors.brandPink : AppColors.brandPinkDark,
-                    ),
+              ScaleTransition(
+                scale: _logoScale,
+                child: Hero(
+                  tag: 'app_logo',
+                  child: Image.asset(
+                    'assets/logo.png',
+                    width: 120,
+                    height: 120,
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),

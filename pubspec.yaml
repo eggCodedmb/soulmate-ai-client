@@ -46,6 +46,9 @@ dependencies:
   audio_session: ^0.1.25
   http: ^1.2.0
 
+  # WebView (for Alipay payment)
+  webview_flutter: ^4.10.0
+
   # Utilities
   intl: ^0.19.0
   url_launcher: ^6.3.1
@@ -65,5 +68,23 @@ dev_dependencies:
   freezed: ^2.5.8
   json_serializable: ^6.9.4
 
+  # App Icon Generation
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
+  # Android
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/logo.png"
+  # iOS
+  remove_alpha_ios: true
+  # 禁用自动移除背景（保留 logo 自带的渐变背景）
+  image_path_ios: "assets/logo.png"
+
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/logo.png

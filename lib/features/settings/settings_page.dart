@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/di/providers.dart';
 import '../../core/storage/local_storage.dart';
 import '../../core/storage/secure_storage.dart';
 
@@ -192,42 +193,31 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               title: const Text('跟随系统'),
               value: 'system',
               groupValue: _themeMode,
-              onChanged: (value) {
-                setState(() {
-                  _themeMode = value!;
-                });
-                LocalStorage.setThemeMode(value!);
-                Navigator.pop(context);
-              },
+              onChanged: (value) => _applyThemeMode(value!),
             ),
             RadioListTile<String>(
               title: const Text('浅色模式'),
               value: 'light',
               groupValue: _themeMode,
-              onChanged: (value) {
-                setState(() {
-                  _themeMode = value!;
-                });
-                LocalStorage.setThemeMode(value!);
-                Navigator.pop(context);
-              },
+              onChanged: (value) => _applyThemeMode(value!),
             ),
             RadioListTile<String>(
               title: const Text('深色模式'),
               value: 'dark',
               groupValue: _themeMode,
-              onChanged: (value) {
-                setState(() {
-                  _themeMode = value!;
-                });
-                LocalStorage.setThemeMode(value!);
-                Navigator.pop(context);
-              },
+              onChanged: (value) => _applyThemeMode(value!),
             ),
           ],
         ),
       ),
     );
+  }
+
+  void _applyThemeMode(String mode) {
+    setState(() => _themeMode = mode);
+    LocalStorage.setThemeMode(mode);
+    ref.read(themeModeProvider.notifier).state = mode;
+    Navigator.pop(context);
   }
 
   void _showModelUrlDialog(BuildContext context) {

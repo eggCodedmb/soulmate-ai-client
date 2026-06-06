@@ -65,6 +65,85 @@ class SubscriptionPlan {
   };
 }
 
+/// 支付订单
+class PaymentOrder {
+  final int id;
+  final String orderNo;
+  final int userId;
+  final int planId;
+  final double amount;
+  final String paymentChannel;
+  final int paymentStatus; // 0=待支付, 1=已支付, 2=已退款, 3=已关闭
+  final String? tradeNo;
+  final String? paidTime;
+  final String periodType;
+
+  const PaymentOrder({
+    required this.id,
+    required this.orderNo,
+    required this.userId,
+    required this.planId,
+    required this.amount,
+    this.paymentChannel = 'alipay',
+    this.paymentStatus = 0,
+    this.tradeNo,
+    this.paidTime,
+    this.periodType = 'monthly',
+  });
+
+  factory PaymentOrder.fromJson(Map<String, dynamic> json) {
+    return PaymentOrder(
+      id: (json['id'] as num).toInt(),
+      orderNo: json['orderNo'] as String? ?? '',
+      userId: (json['userId'] as num?)?.toInt() ?? 0,
+      planId: (json['planId'] as num?)?.toInt() ?? 0,
+      amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      paymentChannel: json['paymentChannel'] as String? ?? 'alipay',
+      paymentStatus: (json['paymentStatus'] as num?)?.toInt() ?? 0,
+      tradeNo: json['tradeNo'] as String?,
+      paidTime: json['paidTime'] as String?,
+      periodType: json['periodType'] as String? ?? 'monthly',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'orderNo': orderNo,
+    'userId': userId,
+    'planId': planId,
+    'amount': amount,
+    'paymentChannel': paymentChannel,
+    'paymentStatus': paymentStatus,
+    'tradeNo': tradeNo,
+    'paidTime': paidTime,
+    'periodType': periodType,
+  };
+
+  /// 是否已支付
+  bool get isPaid => paymentStatus == 1;
+
+  /// 是否待支付
+  bool get isPending => paymentStatus == 0;
+}
+
+/// 创建支付响应
+class CreatePaymentResponse {
+  final String orderNo;
+  final String payForm;
+
+  const CreatePaymentResponse({
+    required this.orderNo,
+    required this.payForm,
+  });
+
+  factory CreatePaymentResponse.fromJson(Map<String, dynamic> json) {
+    return CreatePaymentResponse(
+      orderNo: json['orderNo'] as String? ?? '',
+      payForm: json['payForm'] as String? ?? '',
+    );
+  }
+}
+
 /// 用户订阅
 class UserSubscription {
   final int id;

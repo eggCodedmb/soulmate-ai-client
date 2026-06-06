@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/network/api_service.dart';
@@ -791,6 +792,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               title: const Text('伴侣详情'),
               onTap: () {
                 Navigator.pop(context);
+                if (_companionId != null) {
+                  context.push('/partners/detail/$_companionId');
+                }
               },
             ),
           ],

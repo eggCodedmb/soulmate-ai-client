@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/network/api_client.dart';
+import '../../core/network/api_service.dart';
 import '../../core/theme/app_shadows.dart';
+import '../../shared/models/user.dart';
 
 /// 个人中心页
 class ProfilePage extends ConsumerStatefulWidget {
@@ -13,6 +16,31 @@ class ProfilePage extends ConsumerStatefulWidget {
 }
 
 class _ProfilePageState extends ConsumerState<ProfilePage> {
+  User? _user;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserInfo();
+  }
+
+  Future<void> _loadUserInfo() async {
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      final user = await apiService.getUserInfo();
+      setState(() {
+        _user = user;
+      });
+    } catch (e) {
+      debugPrint('加载用户信息失败: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -25,26 +53,35 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // 用户信息卡片
-          _buildUserCard(context),
-          const SizedBox(height: 16),
-          // 数据概览
-          _buildDataOverview(context),
-          const SizedBox(height: 16),
-          // 会员升级
-          _buildUpgradeCard(context),
-          const SizedBox(height: 16),
-          // 功能菜单
-          _buildMenuSection(context),
-        ],
-      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadUserInfo,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // 用户信息卡片
+                  _buildUserCard(context),
+                  const SizedBox(height: 16),
+                  // 数据概览
+                  _buildDataOverview(context),
+                  const SizedBox(height: 16),
+                  // 会员升级
+                  _buildUpgradeCard(context),
+                  const SizedBox(height: 16),
+                  // 功能菜单
+                  _buildMenuSection(context),
+                ],
+              ),
+            ),
     );
   }
 
   Widget _buildUserCard(BuildContext context) {
+    final nickname = _user?.nickname ?? '未设置昵称';
+    final userId = _user?.id ?? 0;
+    final isGuest = _user?.guestFlag == 1;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -55,19 +92,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       child: Row(
         children: [
           // 头像
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Theme.of(context).colorScheme.primaryContainer,
-            ),
-            child: Icon(
-              Icons.person_rounded,
-              size: 32,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
+          _buildAvatar(context),
           const SizedBox(width: 16),
           // 用户信息
           Expanded(
@@ -75,12 +100,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '用户昵称',
+                  nickname,
                   style: Theme.of(context).textTheme.titleLarge,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'ID: 123456789',
+                  'ID: $userId',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -89,13 +116,15 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.brandPink.withOpacity(0.1),
+                    color: isGuest
+                        ? AppColors.brandWarmPeach.withOpacity(0.1)
+                        : AppColors.brandPink.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '免费版',
+                    isGuest ? '游客账号' : '免费版',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: AppColors.brandPink,
+                      color: isGuest ? AppColors.brandWarmPeach : AppColors.brandPink,
                     ),
                   ),
                 ),
@@ -108,8 +137,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               Icons.edit_outlined,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
-            onPressed: () {
-              // TODO: 编辑用户资料
+            onPressed: () async {
+              final updated = await context.push<bool>('/profile/edit');
+              if (updated == true) {
+                _loadUserInfo();
+              }
             },
           ),
         ],
@@ -117,7 +149,45 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
+  Widget _buildAvatar(BuildContext context) {
+    final avatarUrl = _user?.avatarUrl;
+
+    return Container(
+      width: 64,
+      height: 64,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Theme.of(context).colorScheme.primaryContainer,
+      ),
+      child: avatarUrl != null && avatarUrl.isNotEmpty
+          ? ClipOval(
+              child: Image.network(
+                getFullUrl(ref, avatarUrl),
+                fit: BoxFit.cover,
+                width: 64,
+                height: 64,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.person_rounded,
+                  size: 32,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            )
+          : Icon(
+              Icons.person_rounded,
+              size: 32,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+    );
+  }
+
   Widget _buildDataOverview(BuildContext context) {
+    // 计算陪伴天数
+    final createTime = _user?.createTime;
+    final days = createTime != null
+        ? DateTime.now().difference(createTime).inDays
+        : 0;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -128,19 +198,19 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildDataItem(context, '已陪伴', '30', '天'),
+          _buildDataItem(context, '已陪伴', '$days', '天'),
           Container(
             width: 1,
             height: 40,
             color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
           ),
-          _buildDataItem(context, '共对话', '1,234', '条'),
+          _buildDataItem(context, '共对话', '--', '条'),
           Container(
             width: 1,
             height: 40,
             color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
           ),
-          _buildDataItem(context, '记忆', '128', '条'),
+          _buildDataItem(context, '记忆', '--', '条'),
         ],
       ),
     );
@@ -218,9 +288,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
           ),
           ElevatedButton(
-            onPressed: () {
-              // TODO: 跳转到订阅页
-            },
+            onPressed: () => context.push('/profile/subscription'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
               foregroundColor: AppColors.brandPink,
@@ -263,9 +331,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             context,
             icon: Icons.workspace_premium_outlined,
             title: '订阅会员',
-            onTap: () {
-              // TODO: 跳转到订阅页
-            },
+            onTap: () => context.push('/profile/subscription'),
           ),
           _buildDivider(context),
           _buildMenuItem(

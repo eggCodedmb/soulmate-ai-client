@@ -241,7 +241,7 @@ class ApiService {
   /// 创建支付订单
   Future<CreatePaymentResponse> createPayment(int planId) async {
     final response = await _dio.post(
-      '/api/payment/create',
+      '/api/alipay/create',
       data: {'planId': planId},
     );
     return CreatePaymentResponse.fromJson(
@@ -252,7 +252,7 @@ class ApiService {
   /// 查询支付订单状态
   Future<PaymentOrder> getPaymentStatus(String orderNo) async {
     final response = await _dio.get(
-      '/api/payment/status',
+      '/api/alipay/status',
       queryParameters: {'orderNo': orderNo},
     );
     return PaymentOrder.fromJson(_unwrap(response) as Map<String, dynamic>);
