@@ -418,10 +418,10 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
   Widget _buildCompanionFilter(BuildContext context) {
     return SliverToBoxAdapter(
       child: SizedBox(
-        height: 50,
+        height: 54,
         child: ListView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           children: [
             _buildCompanionChip(
               context,
@@ -529,10 +529,10 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
 
     return SliverToBoxAdapter(
       child: SizedBox(
-        height: 46,
+        height: 56,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           itemCount: allCategories.length,
           separatorBuilder: (_, __) => const SizedBox(width: 8),
           itemBuilder: (context, index) {
