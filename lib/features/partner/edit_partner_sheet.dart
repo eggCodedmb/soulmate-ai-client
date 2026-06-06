@@ -1,25 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
-import '../../core/constants/app_dimensions.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/companion.dart';
 
-/// 编辑伴侣页面（全屏）
+/// 伴侣编辑/创建页面（全屏）
+///
+/// 编辑模式：传入已有 [companion]
+/// 创建模式：不传 [companion]，调用 [EditPartnerSheet.showCreate]
 class EditPartnerSheet extends ConsumerStatefulWidget {
-  final Companion companion;
+  /// 编辑模式时传入的伴侣对象，创建模式为 null
+  final Companion? companion;
+
+  /// 保存/创建成功后的回调
   final VoidCallback onSaved;
 
   const EditPartnerSheet({
     super.key,
-    required this.companion,
+    this.companion,
     required this.onSaved,
   });
 
-  /// 显示编辑伴侣页面
+  /// 编辑模式
   static void show(BuildContext context, Companion companion, VoidCallback onSaved) {
     Navigator.push(
       context,
@@ -27,6 +33,19 @@ class EditPartnerSheet extends ConsumerStatefulWidget {
         builder: (context) => EditPartnerSheet(
           companion: companion,
           onSaved: onSaved,
+        ),
+      ),
+    );
+  }
+
+  /// 创建模式
+  static void showCreate(BuildContext context, VoidCallback onCreated) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditPartnerSheet(
+          companion: null,
+          onSaved: onCreated,
         ),
       ),
     );
@@ -47,7 +66,10 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
   bool _isSaving = false;
   bool _isUploadingAvatar = false;
 
-  // 关系类型配置（Material Icons）
+  /// 是否为创建模式
+  bool get _isCreateMode => widget.companion == null;
+
+  // 关系类型配置
   static const List<Map<String, dynamic>> _relationships = [
     {'value': 'lover', 'label': '恋人', 'icon': Icons.favorite_rounded},
     {'value': 'friend', 'label': '挚友', 'icon': Icons.handshake_rounded},
@@ -55,7 +77,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
     {'value': 'confidant', 'label': '树洞', 'icon': Icons.park_rounded},
   ];
 
-  // 性别配置（Material Icons）
+  // 性别配置
   static const List<Map<String, dynamic>> _genders = [
     {'value': 1, 'label': '男', 'icon': Icons.male_rounded},
     {'value': 2, 'label': '女', 'icon': Icons.female_rounded},
@@ -86,13 +108,13 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
   void initState() {
     super.initState();
     final c = widget.companion;
-    _nameController = TextEditingController(text: c.name);
-    _descriptionController = TextEditingController(text: c.description ?? '');
-    _selectedGender = c.gender;
-    _selectedRelationship = c.relationshipType;
-    _selectedPersonalities = List.from(c.personalityKeys);
-    _selectedSpeakingStyle = c.speakingStyle;
-    _currentAvatarUrl = c.avatarUrl;
+    _nameController = TextEditingController(text: c?.name ?? '');
+    _descriptionController = TextEditingController(text: c?.description ?? '');
+    _selectedGender = c?.gender ?? 2; // 默认女
+    _selectedRelationship = c?.relationshipType ?? 'lover';
+    _selectedPersonalities = c != null ? List.from(c.personalityKeys) : [];
+    _selectedSpeakingStyle = c?.speakingStyle ?? 'casual';
+    _currentAvatarUrl = c?.avatarUrl;
   }
 
   @override
@@ -102,15 +124,24 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
     super.dispose();
   }
 
-  bool get _canSave => _nameController.text.trim().isNotEmpty;
-  bool get _hasChanges =>
-      _nameController.text.trim() != widget.companion.name ||
-      _descriptionController.text.trim() != (widget.companion.description ?? '') ||
-      _selectedGender != widget.companion.gender ||
-      _selectedRelationship != widget.companion.relationshipType ||
-      _selectedSpeakingStyle != widget.companion.speakingStyle ||
-      _currentAvatarUrl != widget.companion.avatarUrl ||
-      !_listEquals(_selectedPersonalities, widget.companion.personalityKeys);
+  bool get _canSave {
+    if (_nameController.text.trim().isEmpty) return false;
+    // 创建模式需要至少选一个性格
+    if (_isCreateMode && _selectedPersonalities.isEmpty) return false;
+    return true;
+  }
+
+  bool get _hasChanges {
+    if (_isCreateMode) return true;
+    final c = widget.companion!;
+    return _nameController.text.trim() != c.name ||
+        _descriptionController.text.trim() != (c.description ?? '') ||
+        _selectedGender != c.gender ||
+        _selectedRelationship != c.relationshipType ||
+        _selectedSpeakingStyle != c.speakingStyle ||
+        _currentAvatarUrl != c.avatarUrl ||
+        !_listEquals(_selectedPersonalities, c.personalityKeys);
+  }
 
   bool _listEquals(List<String> a, List<String> b) {
     if (a.length != b.length) return false;
@@ -139,10 +170,14 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
       final apiService = ref.read(apiServiceProvider);
       final result = await apiService.uploadFile(picked.path);
 
-      // 用专用接口更新伴侣头像
-      await apiService.updateCompanionAvatar(widget.companion.id, result.url);
-
-      setState(() => _currentAvatarUrl = result.url);
+      if (_isCreateMode) {
+        // 创建模式：只存本地 URL，创建伴侣时一起提交
+        setState(() => _currentAvatarUrl = result.url);
+      } else {
+        // 编辑模式：用专用接口更新伴侣头像
+        await apiService.updateCompanionAvatar(widget.companion!.id, result.url);
+        setState(() => _currentAvatarUrl = result.url);
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -161,6 +196,12 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
   }
 
   Future<void> _removeAvatar() async {
+    if (_isCreateMode) {
+      // 创建模式：直接清除本地 URL
+      setState(() => _currentAvatarUrl = null);
+      return;
+    }
+
     setState(() => _isUploadingAvatar = true);
 
     try {
@@ -178,7 +219,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
       }
 
       // 用专用接口清空伴侣头像
-      await apiService.updateCompanionAvatar(widget.companion.id, null);
+      await apiService.updateCompanionAvatar(widget.companion!.id, null);
 
       setState(() => _currentAvatarUrl = null);
 
@@ -269,38 +310,73 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
 
     try {
       final apiService = ref.read(apiServiceProvider);
-      final updated = Companion(
-        id: widget.companion.id,
-        userId: widget.companion.userId,
-        name: _nameController.text.trim(),
-        gender: _selectedGender,
-        relationshipType: _selectedRelationship,
-        personalityKeys: _selectedPersonalities,
-        speakingStyle: _selectedSpeakingStyle,
-        description: _descriptionController.text.trim().isEmpty
-            ? null
-            : _descriptionController.text.trim(),
-        avatarUrl: _currentAvatarUrl,
-        themeColor: widget.companion.themeColor,
-        status: widget.companion.status,
-        companionOrder: widget.companion.companionOrder,
-        createTime: widget.companion.createTime,
-        updateTime: widget.companion.updateTime,
-      );
 
-      await apiService.updateCompanion(widget.companion.id, updated);
+      if (_isCreateMode) {
+        // 创建模式
+        await apiService.createCompanion(
+          CreateCompanionRequest(
+            name: _nameController.text.trim(),
+            gender: _selectedGender,
+            relationshipType: _selectedRelationship,
+            personalityKeys: _selectedPersonalities,
+            speakingStyle: _selectedSpeakingStyle,
+            description: _descriptionController.text.trim().isEmpty
+                ? null
+                : _descriptionController.text.trim(),
+          ),
+        );
+
+        // 如果创建时选了头像，创建成功后需要获取伴侣并更新头像
+        // （createCompanion 不支持 avatarUrl 参数）
+        if (_currentAvatarUrl != null && _currentAvatarUrl!.isNotEmpty) {
+          try {
+            final companions = await apiService.getCompanionList();
+            if (companions.isNotEmpty) {
+              final newest = companions.last;
+              await apiService.updateCompanionAvatar(newest.id, _currentAvatarUrl);
+            }
+          } catch (_) {
+            // 头像更新失败不影响主流程
+          }
+        }
+      } else {
+        // 编辑模式
+        final c = widget.companion!;
+        final updated = Companion(
+          id: c.id,
+          userId: c.userId,
+          name: _nameController.text.trim(),
+          gender: _selectedGender,
+          relationshipType: _selectedRelationship,
+          personalityKeys: _selectedPersonalities,
+          speakingStyle: _selectedSpeakingStyle,
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
+          avatarUrl: _currentAvatarUrl,
+          themeColor: c.themeColor,
+          status: c.status,
+          companionOrder: c.companionOrder,
+          createTime: c.createTime,
+          updateTime: c.updateTime,
+        );
+
+        await apiService.updateCompanion(c.id, updated);
+      }
 
       if (mounted) {
         widget.onSaved();
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('伴侣信息已更新')),
+          SnackBar(
+            content: Text(_isCreateMode ? '伴侣创建成功！' : '伴侣信息已更新'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败: $e')),
+          SnackBar(content: Text('${_isCreateMode ? '创建' : '保存'}失败: $e')),
         );
       }
     } finally {
@@ -426,7 +502,9 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
                 const SizedBox(height: 16),
                 // 伴侣名字
                 Text(
-                  _nameController.text.isEmpty ? '未命名伴侣' : _nameController.text,
+                  _nameController.text.isEmpty
+                      ? (_isCreateMode ? '创建新伴侣' : '未命名伴侣')
+                      : _nameController.text,
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     color: scheme.onSurface,
                     fontWeight: FontWeight.w700,
@@ -688,7 +766,10 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
                   right: gender != _genders.last ? 8 : 0,
                 ),
                 child: GestureDetector(
-                  onTap: () => setState(() => _selectedGender = gender['value'] as int),
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    setState(() => _selectedGender = gender['value'] as int);
+                  },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     curve: Curves.easeInOut,
@@ -759,7 +840,10 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
           children: _relationships.map((rel) {
             final isSelected = _selectedRelationship == rel['value'];
             return GestureDetector(
-              onTap: () => setState(() => _selectedRelationship = rel['value'] as String),
+              onTap: () {
+                HapticFeedback.lightImpact();
+                setState(() => _selectedRelationship = rel['value'] as String);
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeInOut,
@@ -829,6 +913,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
               label: Text(p['label']!),
               selected: isSelected,
               onSelected: (selected) {
+                HapticFeedback.lightImpact();
                 setState(() {
                   if (selected) {
                     if (_selectedPersonalities.length < 3) {
@@ -934,7 +1019,9 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
                 ),
               )
             : Text(
-                '保存修改',
+                _isCreateMode
+                    ? '创建伴侣'
+                    : (_hasChanges ? '保存修改' : '无修改'),
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: isActive ? scheme.onPrimary : scheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,

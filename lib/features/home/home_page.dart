@@ -1,12 +1,17 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
-import '../../core/di/providers.dart';
+import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/companion.dart';
 import '../../shared/models/conversation.dart';
+import '../../shared/models/memory.dart';
 
 /// 首页 - 伴侣主页
 class HomePage extends ConsumerStatefulWidget {
@@ -18,8 +23,17 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   Companion? _currentCompanion;
-  Conversation? _currentConversation;
+  List<Conversation> _conversations = [];
+  List<Memory> _memories = [];
   bool _isLoading = true;
+
+  // 关系类型中文映射
+  static const _relationshipLabels = {
+    'lover': '恋人',
+    'friend': '挚友',
+    'mentor': '导师',
+    'confidant': '树洞',
+  };
 
   @override
   void initState() {
@@ -28,33 +42,47 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Future<void> _loadData() async {
+    setState(() => _isLoading = true);
     try {
       final apiService = ref.read(apiServiceProvider);
-      final companions = await apiService.getCompanionList();
+
+      // 并行加载用户信息、伴侣列表、对话列表
+      final results = await Future.wait([
+        apiService.getUserInfo(),
+        apiService.getCompanionList(),
+        apiService.getConversationList(),
+      ]);
+
+      final companions = results[1] as List<Companion>;
+      final conversations = results[2] as List<Conversation>;
+
+      Companion? companion;
+      List<Memory> memories = [];
 
       if (companions.isNotEmpty) {
-        setState(() {
-          _currentCompanion = companions.first;
-        });
-
-        // 获取或创建对话
-        final conversations = await apiService.getConversationList();
-        final existingConv = conversations.where(
-          (c) => c.companionId == _currentCompanion!.id,
-        );
-
-        if (existingConv.isNotEmpty) {
-          setState(() {
-            _currentConversation = existingConv.first;
-          });
+        companion = companions.first;
+        // 加载当前伴侣的记忆
+        try {
+          memories =
+              await apiService.getMemoryList(companionId: companion.id);
+        } catch (_) {
+          // 记忆加载失败不影响主页
         }
       }
+
+      if (mounted) {
+        setState(() {
+          _currentCompanion = companion;
+          _conversations = conversations;
+          _memories = memories;
+        });
+      }
     } catch (e) {
-      debugPrint('加载数据失败: $e');
+      debugPrint('加载首页数据失败: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -62,22 +90,26 @@ class _HomePageState extends ConsumerState<HomePage> {
     await _loadData();
   }
 
-  void _startChat() async {
+  Future<void> _startChat() async {
     if (_currentCompanion == null) return;
 
     try {
       final apiService = ref.read(apiServiceProvider);
 
-      // 如果没有对话，创建一个
-      if (_currentConversation == null) {
-        final conv = await apiService.createConversation(_currentCompanion!.id);
-        setState(() {
-          _currentConversation = conv;
-        });
+      // 查找或创建对话
+      final existingConv = _conversations.where(
+        (c) => c.companionId == _currentCompanion!.id,
+      );
+
+      Conversation conv;
+      if (existingConv.isNotEmpty) {
+        conv = existingConv.first;
+      } else {
+        conv = await apiService.createConversation(_currentCompanion!.id);
       }
 
       if (mounted) {
-        context.push('/conversations/chat/${_currentConversation!.id.toString()}');
+        context.push('/conversations/chat/${conv.id.toString()}');
       }
     } catch (e) {
       if (mounted) {
@@ -90,239 +122,1006 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isLight = Theme.of(context).brightness == Brightness.light;
-
     if (_isLoading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.brandPink),
+        ),
       );
     }
 
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       body: RefreshIndicator(
         onRefresh: _refreshData,
+        color: AppColors.brandPink,
         child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
           slivers: [
-            // 氛围背景
-            SliverAppBar(
-              expandedHeight: 300,
-              pinned: true,
-              flexibleSpace: FlexibleSpaceBar(
-                background: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: isLight
-                          ? [AppColors.brandPink, AppColors.brandWarmPeach]
-                          : [const Color(0xFF1A0A10), const Color(0xFF2D1520)],
-                    ),
-                  ),
-                ),
-              ),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined),
-                  onPressed: () => context.push('/profile/settings'),
-                ),
-              ],
-            ),
-            // 顶部状态栏
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _getTimeGreeting(),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.cloud_outlined,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '25°C',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // AI伴侣形象区
-            SliverToBoxAdapter(
-              child: GestureDetector(
-                onTap: _startChat,
-                child: Container(
-                  height: 240,
-                  alignment: Alignment.center,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // 呼吸光晕效果
-                      Container(
-                        width: 180,
-                        height: 180,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.brandPink.withOpacity(0.3),
-                              blurRadius: 30,
-                              spreadRadius: 10,
-                            ),
-                          ],
-                        ),
-                      ),
-                      // 伴侣头像
-                      Container(
-                        width: 160,
-                        height: 160,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                          shape: BoxShape.circle,
-                          boxShadow: AppShadows.level2(context),
-                        ),
-                        child: Icon(
-                          Icons.favorite_rounded,
-                          size: 80,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // 问候语卡片
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: AppShadows.level1(context),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _currentCompanion != null
-                            ? '${_getTimeGreeting()}，${_currentCompanion!.name}想你了~'
-                            : '${_getTimeGreeting()}，创建一个伴侣吧~',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _currentCompanion != null
-                            ? '今天过得怎么样？有什么想聊的吗？'
-                            : '点击下方按钮，开始你的AI伴侣之旅',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-            // 互动信息卡片区
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1.5,
-                  children: [
-                    _buildInfoCard(
-                      context,
-                      icon: Icons.calendar_today_rounded,
-                      title: '在一起的时光',
-                      subtitle: _currentCompanion != null
-                          ? '${DateTime.now().difference(_currentCompanion!.createTime ?? DateTime.now()).inDays} 天'
-                          : '未创建',
-                    ),
-                    _buildInfoCard(
-                      context,
-                      icon: Icons.chat_bubble_rounded,
-                      title: '上次聊天',
-                      subtitle: _currentConversation?.lastMessagePreview ?? '暂无',
-                    ),
-                    _buildInfoCard(
-                      context,
-                      icon: Icons.emoji_emotions_rounded,
-                      title: '今日情绪',
-                      subtitle: '开心 😊',
-                    ),
-                    _buildInfoCard(
-                      context,
-                      icon: Icons.psychology_rounded,
-                      title: '记忆碎片',
-                      subtitle: '查看全部',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-            // 快捷入口区
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 48,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  children: [
-                    _buildQuickAction(context, '💬 聊天', _startChat),
-                    _buildQuickAction(context, '🎵 一起听歌', () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('功能开发中...')),
-                      );
-                    }),
-                    _buildQuickAction(context, '📖 讲故事', () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('功能开发中...')),
-                      );
-                    }),
-                    _buildQuickAction(context, '🎮 玩游戏', () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('功能开发中...')),
-                      );
-                    }),
-                    _buildQuickAction(context, '🧘 一起冥想', () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('功能开发中...')),
-                      );
-                    }),
-                  ],
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            // 渐变头部 + 伴侣形象
+            _buildHeroHeader(context),
+
+            // 快捷聊天入口
+            _buildChatEntryCard(context),
+
+            // 互动数据统计
+            _buildStatsRow(context),
+
+            // 最近记忆
+            if (_memories.isNotEmpty) _buildRecentMemories(context),
+
+            // 最近对话
+            if (_conversations.isNotEmpty)
+              _buildRecentConversations(context),
+
+            // 快捷操作网格
+            _buildQuickActions(context),
+
+            // 底部留白
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
         ),
       ),
     );
   }
+
+  // ==================== 头部区域 ====================
+
+  Widget _buildHeroHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final companion = _currentCompanion;
+
+    // 根据伴侣性格选择主题色
+    final personalityKey = companion?.personalityKeys.isNotEmpty == true
+        ? companion!.personalityKeys.first
+        : 'gentle';
+    final personalityColor =
+        AppColors.personalityColors[personalityKey] ?? AppColors.personalityColors['gentle']!;
+    final bgColor = isDark ? personalityColor.dark : personalityColor.light;
+
+    return SliverAppBar(
+      expandedHeight: 340,
+      pinned: true,
+      stretch: true,
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      automaticallyImplyLeading: false,
+      flexibleSpace: FlexibleSpaceBar(
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 渐变背景
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: isDark
+                      ? [
+                          const Color(0xFF1A1025),
+                          bgColor.withValues(alpha: 0.3),
+                        ]
+                      : [
+                          AppColors.brandPink.withValues(alpha: 0.15),
+                          bgColor,
+                        ],
+                ),
+              ),
+            ),
+
+            // 毛玻璃效果
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              child: Container(color: Colors.transparent),
+            ),
+
+            // 内容
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 顶部状态栏
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _getTimeGreeting(),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.settings_outlined,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          onPressed: () => context.push('/profile/settings'),
+                        ),
+                      ],
+                    ),
+
+                    // 伴侣头像区域
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // 头像 + 呼吸光晕
+                            _buildCompanionAvatar(context, companion),
+
+                            const SizedBox(height: 12),
+
+                            // 问候语
+                            Text(
+                              companion != null
+                                  ? '${_getTimeGreeting()}，${companion.name}想你了~'
+                                  : '${_getTimeGreeting()}，创建一个伴侣吧~',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            // 关系标签
+                            if (companion != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.brandPink.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  _relationshipLabels[companion.relationshipType] ??
+                                      companion.relationshipType,
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: AppColors.brandPink,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              )
+                                    .animate()
+                                    .fadeIn(delay: 300.ms, duration: 400.ms)
+                                    .scale(
+                                      begin: const Offset(0.8, 0.8),
+                                      delay: 300.ms,
+                                      duration: 400.ms,
+                                      curve: Curves.easeOutBack,
+                                    ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompanionAvatar(BuildContext context, Companion? companion) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    // 根据伴侣性格选择光晕颜色
+    final personalityKey = companion?.personalityKeys.isNotEmpty == true
+        ? companion!.personalityKeys.first
+        : 'gentle';
+    final personalityColor =
+        AppColors.personalityColors[personalityKey] ?? AppColors.personalityColors['gentle']!;
+    final isDark = theme.brightness == Brightness.dark;
+    final glowColor = isDark
+        ? AppColors.brandPinkDark.withValues(alpha: 0.3)
+        : AppColors.brandPink.withValues(alpha: 0.25);
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 1.0, end: 1.05),
+      duration: const Duration(milliseconds: 2000),
+      curve: Curves.easeInOut,
+      onEnd: () {
+        // 通过 setState 触发重建来循环动画
+        if (mounted) setState(() {});
+      },
+      builder: (context, scale, child) {
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            width: 150,
+            height: 150,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: glowColor,
+                  blurRadius: 30,
+                  spreadRadius: 8 * scale,
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        );
+      },
+      child: Container(
+        width: 130,
+        height: 130,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: colorScheme.surfaceContainerHighest,
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.3),
+            width: 3,
+          ),
+          boxShadow: AppShadows.level2(context),
+        ),
+        child: ClipOval(
+          child: companion?.avatarUrl != null &&
+                  companion!.avatarUrl!.isNotEmpty
+              ? CachedNetworkImage(
+                  imageUrl: getFullUrl(ref, companion.avatarUrl!),
+                  width: 130,
+                  height: 130,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => _buildAvatarPlaceholder(
+                    context,
+                    personalityColor: isDark
+                        ? personalityColor.dark
+                        : personalityColor.light,
+                  ),
+                  errorWidget: (_, __, ___) => _buildAvatarPlaceholder(
+                    context,
+                    personalityColor: isDark
+                        ? personalityColor.dark
+                        : personalityColor.light,
+                  ),
+                )
+              : _buildAvatarPlaceholder(
+                  context,
+                  personalityColor:
+                      isDark ? personalityColor.dark : personalityColor.light,
+                ),
+        ),
+      ),
+    )
+        .animate(onPlay: (controller) => controller.repeat(reverse: true))
+        .scaleXY(
+          begin: 1,
+          end: 1.05,
+          duration: 2500.ms,
+          curve: Curves.easeInOut,
+        );
+  }
+
+  Widget _buildAvatarPlaceholder(
+    BuildContext context, {
+    required Color personalityColor,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.brandPink.withValues(alpha: 0.2),
+            personalityColor.withValues(alpha: 0.3),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.favorite_rounded,
+          size: 64,
+          color: AppColors.brandPink.withValues(alpha: 0.6),
+        ),
+      ),
+    );
+  }
+
+  // ==================== 快捷聊天入口 ====================
+
+  Widget _buildChatEntryCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final companion = _currentCompanion;
+
+    if (companion == null) {
+      // 无伴侣时引导创建
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: GestureDetector(
+            onTap: () => context.push('/partners'),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.brandPink.withValues(alpha: 0.1),
+                    AppColors.brandLavender.withValues(alpha: 0.1),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: AppColors.brandPink.withValues(alpha: 0.2),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [AppColors.brandPink, AppColors.brandLavender],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.add_rounded,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '创建你的 AI 伴侣',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '开始一段独特的陪伴之旅',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          )
+              .animate()
+              .fadeIn(delay: 100.ms, duration: 400.ms)
+              .slideY(begin: 0.1, end: 0, delay: 100.ms, duration: 400.ms),
+        ),
+      );
+    }
+
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: GestureDetector(
+          onTap: _startChat,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: AppShadows.level1(context),
+            ),
+            child: Row(
+              children: [
+                // 渐变图标
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.brandPink, AppColors.brandWarmPeach],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.chat_bubble_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '想和${companion.name}聊点什么？',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '点击开始对话',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.brandPink.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: AppColors.brandPink,
+                    size: 20,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        )
+            .animate()
+            .fadeIn(delay: 100.ms, duration: 400.ms)
+            .slideY(begin: 0.1, end: 0, delay: 100.ms, duration: 400.ms),
+      ),
+    );
+  }
+
+  // ==================== 数据统计 ====================
+
+  Widget _buildStatsRow(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final companion = _currentCompanion;
+
+    final days = companion?.createTime != null
+        ? DateTime.now().difference(companion!.createTime!).inDays
+        : 0;
+
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: AppShadows.level1(context),
+          ),
+          child: Row(
+            children: [
+              _buildStatItem(
+                context,
+                icon: Icons.calendar_today_rounded,
+                value: '$days',
+                label: '在一起天数',
+                color: AppColors.brandPink,
+              ),
+              _buildStatDivider(context),
+              _buildStatItem(
+                context,
+                icon: Icons.psychology_rounded,
+                value: '${_memories.length}',
+                label: '条记忆',
+                color: AppColors.brandLavender,
+              ),
+              _buildStatDivider(context),
+              _buildStatItem(
+                context,
+                icon: Icons.chat_bubble_rounded,
+                value: '${_conversations.length}',
+                label: '次对话',
+                color: AppColors.brandWarmPeach,
+              ),
+            ],
+          ),
+        )
+            .animate()
+            .fadeIn(delay: 200.ms, duration: 400.ms)
+            .slideY(begin: 0.08, end: 0, delay: 200.ms, duration: 400.ms),
+      ),
+    );
+  }
+
+  Widget _buildStatItem(
+    BuildContext context, {
+    required IconData icon,
+    required String value,
+    required String label,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatDivider(BuildContext context) {
+    return Container(
+      height: 40,
+      width: 1,
+      color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
+    );
+  }
+
+  // ==================== 最近记忆 ====================
+
+  Widget _buildRecentMemories(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // 只显示最近 5 条记忆
+    final recentMemories = _memories.take(5).toList();
+
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '最近记忆',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => context.push('/profile/memories'),
+                    child: Text(
+                      '查看全部',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: AppColors.brandPink,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 140,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: recentMemories.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  return _buildMemoryCard(context, recentMemories[index], index);
+                },
+              ),
+            ),
+          ],
+        ),
+      )
+          .animate()
+          .fadeIn(delay: 300.ms, duration: 400.ms)
+          .slideY(begin: 0.06, end: 0, delay: 300.ms, duration: 400.ms),
+    );
+  }
+
+  Widget _buildMemoryCard(BuildContext context, Memory memory, int index) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    // 分类颜色
+    final categoryColors = {
+      'preference': AppColors.brandPink,
+      'personality': AppColors.brandLavender,
+      'experience': AppColors.brandWarmPeach,
+      'relationship': const Color(0xFF34C759),
+      'habit': const Color(0xFFFF9500),
+      'other': const Color(0xFF5AC8FA),
+    };
+    final categoryIcons = {
+      'preference': Icons.favorite_rounded,
+      'personality': Icons.psychology_rounded,
+      'experience': Icons.auto_stories_rounded,
+      'relationship': Icons.people_rounded,
+      'habit': Icons.star_rounded,
+      'other': Icons.lightbulb_rounded,
+    };
+
+    final color = categoryColors[memory.category] ?? AppColors.brandPink;
+    final icon = categoryIcons[memory.category] ?? Icons.lightbulb_rounded;
+
+    return GestureDetector(
+      onTap: () => context.push('/profile/memories'),
+      child: Container(
+        width: 200,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: AppShadows.level1(context),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 分类图标 + 重要度
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: color, size: 18),
+                ),
+                const Spacer(),
+                // 重要度星星
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(5, (i) {
+                    final filled = i < (memory.importance / 2).ceil();
+                    return Icon(
+                      filled ? Icons.star_rounded : Icons.star_border_rounded,
+                      size: 12,
+                      color: filled
+                          ? const Color(0xFFFF9500)
+                          : colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                    );
+                  }),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // 标题
+            Text(
+              memory.title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 6),
+
+            // 内容预览
+            Expanded(
+              child: Text(
+                memory.content,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==================== 最近对话 ====================
+
+  Widget _buildRecentConversations(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // 只显示最近 2 条对话
+    final recentConvs = _conversations.take(2).toList();
+
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+              child: Text(
+                '最近对话',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ...recentConvs.map(
+              (conv) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _buildConversationPreview(context, conv),
+              ),
+            ),
+          ],
+        ),
+      )
+          .animate()
+          .fadeIn(delay: 400.ms, duration: 400.ms)
+          .slideY(begin: 0.06, end: 0, delay: 400.ms, duration: 400.ms),
+    );
+  }
+
+  Widget _buildConversationPreview(BuildContext context, Conversation conv) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return GestureDetector(
+      onTap: () =>
+          context.push('/conversations/chat/${conv.id.toString()}'),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: AppShadows.level1(context),
+        ),
+        child: Row(
+          children: [
+            // 头像
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppColors.brandPink, AppColors.brandLavender],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.chat_bubble_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 14),
+
+            // 内容
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _currentCompanion?.name ?? '对话',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (conv.unreadCount > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.brandPink,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${conv.unreadCount}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    conv.lastMessagePreview ?? '暂无消息',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 8),
+
+            // 时间
+            Text(
+              _formatTime(conv.lastMessageTime),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==================== 快捷操作 ====================
+
+  Widget _buildQuickActions(BuildContext context) {
+    final theme = Theme.of(context);
+    final companion = _currentCompanion;
+
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+              child: Text(
+                '快捷操作',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 2.2,
+              children: [
+                _buildActionCard(
+                  context,
+                  icon: Icons.chat_bubble_rounded,
+                  label: '开始聊天',
+                  gradientColors: const [
+                    AppColors.brandPink,
+                    AppColors.brandWarmPeach,
+                  ],
+                  onTap: _startChat,
+                ),
+                _buildActionCard(
+                  context,
+                  icon: Icons.psychology_rounded,
+                  label: '记忆管理',
+                  gradientColors: const [
+                    AppColors.brandLavender,
+                    Color(0xFF818CF8),
+                  ],
+                  onTap: () => context.push('/profile/memories'),
+                ),
+                _buildActionCard(
+                  context,
+                  icon: Icons.people_rounded,
+                  label: '伴侣详情',
+                  gradientColors: const [
+                    Color(0xFF34C759),
+                    Color(0xFF30D158),
+                  ],
+                  onTap: () {
+                    if (companion != null) {
+                      context.push('/partners/detail/${companion.id}');
+                    } else {
+                      context.push('/partners');
+                    }
+                  },
+                ),
+                _buildActionCard(
+                  context,
+                  icon: Icons.settings_rounded,
+                  label: '设置',
+                  gradientColors: const [
+                    Color(0xFF8E8E93),
+                    Color(0xFF636366),
+                  ],
+                  onTap: () => context.push('/profile/settings'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      )
+          .animate()
+          .fadeIn(delay: 500.ms, duration: 400.ms)
+          .slideY(begin: 0.06, end: 0, delay: 500.ms, duration: 400.ms),
+    );
+  }
+
+  Widget _buildActionCard(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required List<Color> gradientColors,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: AppShadows.level1(context),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: gradientColors),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 14,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==================== 工具方法 ====================
 
   String _getTimeGreeting() {
     final hour = DateTime.now().hour;
@@ -331,260 +1130,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     if (hour < 14) return '中午好';
     if (hour < 18) return '下午好';
     return '晚上好';
-  }
-
-  Widget _buildInfoCard(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.level1(context),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 24, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: Theme.of(context).textTheme.titleMedium,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickAction(
-    BuildContext context,
-    String label,
-    VoidCallback onTap,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: ActionChip(
-        label: Text(label),
-        onPressed: onTap,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-      ),
-    );
-  }
-}
-
-/// 对话列表页
-class ConversationListPage extends ConsumerStatefulWidget {
-  const ConversationListPage({super.key});
-
-  @override
-  ConsumerState<ConversationListPage> createState() => _ConversationListPageState();
-}
-
-class _ConversationListPageState extends ConsumerState<ConversationListPage> {
-  List<Conversation> _conversations = [];
-  Map<int, Companion> _companionMap = {};
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadConversations();
-  }
-
-  Future<void> _loadConversations() async {
-    try {
-      final apiService = ref.read(apiServiceProvider);
-      final conversations = await apiService.getConversationList();
-      final companions = await apiService.getCompanionList();
-
-      final companionMap = {for (var c in companions) c.id: c};
-
-      setState(() {
-        _conversations = conversations;
-        _companionMap = companionMap;
-      });
-    } catch (e) {
-      debugPrint('加载对话列表失败: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('消息'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              // TODO: 打开搜索
-            },
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _conversations.isEmpty
-              ? _buildEmptyState(context)
-              : RefreshIndicator(
-                  onRefresh: _loadConversations,
-                  child: ListView.separated(
-                    itemCount: _conversations.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final conv = _conversations[index];
-                      final companion = _companionMap[conv.companionId];
-                      return _buildConversationTile(context, conv, companion);
-                    },
-                  ),
-                ),
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.chat_bubble_outline_rounded,
-            size: 80,
-            color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.3),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '还没有聊天记录',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '去和伴侣打个招呼吧',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildConversationTile(
-    BuildContext context,
-    Conversation conv,
-    Companion? companion,
-  ) {
-    return ListTile(
-      leading: Stack(
-        children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-            child: Icon(
-              Icons.favorite_rounded,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                color: AppColors.success,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.surface,
-                  width: 2,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              companion?.name ?? '未知伴侣',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-          if (companion != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                companion.relationshipType,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ),
-        ],
-      ),
-      subtitle: Text(
-        conv.lastMessagePreview ?? '暂无消息',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            _formatTime(conv.lastMessageTime),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          if (conv.unreadCount > 0) ...[
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                '${conv.unreadCount}',
-                style: const TextStyle(color: Colors.white, fontSize: 10),
-              ),
-            ),
-          ],
-        ],
-      ),
-      onTap: () {
-        context.push('/conversations/chat/${conv.id.toString()}');
-      },
-    );
   }
 
   String _formatTime(DateTime? time) {

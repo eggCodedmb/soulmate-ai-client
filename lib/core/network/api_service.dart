@@ -239,10 +239,15 @@ class ApiService {
   // ==================== 支付模块 ====================
 
   /// 创建支付订单
-  Future<CreatePaymentResponse> createPayment(int planId) async {
+  ///
+  /// [paymentChannel] 支付渠道: 'alipay'(支付宝) / 'wechat'(微信) / 'unionpay'(云闪付)
+  Future<CreatePaymentResponse> createPayment(
+    int planId, {
+    String paymentChannel = 'alipay',
+  }) async {
     final response = await _dio.post(
       '/api/alipay/create',
-      data: {'planId': planId},
+      data: {'planId': planId, 'paymentChannel': paymentChannel},
     );
     return CreatePaymentResponse.fromJson(
       _unwrap(response) as Map<String, dynamic>,

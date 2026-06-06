@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/onboarding/onboarding_page.dart';
 import '../../features/auth/auth_page.dart';
 import '../../features/home/home_page.dart';
+import '../../features/home/conversation_list_page.dart';
 import '../../features/chat/chat_page.dart';
 import '../../features/partner/partner_manage_page.dart';
 import '../../features/partner/partner_detail_page.dart';
@@ -11,6 +12,7 @@ import '../../features/profile/profile_page.dart';
 import '../../features/profile/edit_profile_page.dart';
 import '../../features/settings/settings_page.dart';
 import '../../features/subscription/subscription_page.dart';
+import '../../features/memory/memory_page.dart';
 import '../../features/splash/splash_page.dart';
 import '../storage/secure_storage.dart';
 import '../storage/local_storage.dart';
@@ -106,6 +108,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'subscription',
                     builder: (context, state) => const SubscriptionPage(),
+                  ),
+                  GoRoute(
+                    path: 'memories',
+                    builder: (context, state) => const MemoryPage(),
                   ),
                 ],
               ),

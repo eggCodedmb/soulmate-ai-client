@@ -24,6 +24,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
   @override
   void initState() {
     super.initState();
+    
     _logoController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),

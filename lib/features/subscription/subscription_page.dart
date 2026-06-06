@@ -6,6 +6,7 @@ import '../../core/constants/app_dimensions.dart';
 import '../../core/network/api_service.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/subscription.dart';
+import 'payment_method_page.dart';
 import 'payment_webview_page.dart';
 import 'providers/subscription_providers.dart';
 
@@ -545,6 +546,31 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
       final payment = await api.createPayment(plan.id);
 
       if (!context.mounted) return;
+
+      // 弹出支付方式选择页面
+      final paymentChannel = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (_) => PaymentMethodPage(
+            plan: plan,
+            orderNo: payment.orderNo,
+          ),
+        ),
+      );
+
+      if (paymentChannel == null || !context.mounted) {
+        // 用户取消选择
+        return;
+      }
+
+      // 目前仅支持支付宝，其他渠道提示暂未开放
+      if (paymentChannel != 'alipay') {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('该支付方式暂未开放，敬请期待')),
+          );
+        }
+        return;
+      }
 
       // 打开支付宝 WebView
       final orderNo = await Navigator.of(context).push<String>(

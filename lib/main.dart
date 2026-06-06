@@ -6,11 +6,8 @@ import 'core/storage/local_storage.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 初始化本地存储
+  // 初始化本地存储（必须在 runApp 之前，因为 Provider 需要读取配置）
   await LocalStorage.init();
-
-  // 初始化Firebase（取消注释以启用）
-  // await Firebase.initializeApp();
 
   runApp(
     const ProviderScope(

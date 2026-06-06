@@ -314,7 +314,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             icon: Icons.psychology_outlined,
             title: '记忆管理',
             onTap: () {
-              // TODO: 跳转到记忆管理页
+              context.push('/profile/memories');
             },
           ),
           _buildDivider(context),
