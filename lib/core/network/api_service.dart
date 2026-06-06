@@ -61,6 +61,21 @@ class ApiService {
     return User.fromJson(_unwrap(response) as Map<String, dynamic>);
   }
 
+  /// 更新用户信息
+  Future<void> updateUserInfo(User user) async {
+    final response = await _dio.put('/api/user/info', data: user.toJson());
+    _unwrap(response);
+  }
+
+  /// 更新用户头像
+  Future<void> updateAvatar(String? avatarUrl) async {
+    final response = await _dio.put(
+      '/api/user/avatar',
+      data: {'avatarUrl': avatarUrl},
+    );
+    _unwrap(response);
+  }
+
   /// 获取用户资料
   Future<UserProfile> getUserProfile() async {
     final response = await _dio.get('/api/user/profile');
@@ -111,6 +126,15 @@ class ApiService {
   /// 更新伴侣
   Future<void> updateCompanion(int id, Companion companion) async {
     final response = await _dio.put('/api/companion/$id', data: companion.toJson());
+    _unwrap(response);
+  }
+
+  /// 更新伴侣头像
+  Future<void> updateCompanionAvatar(int id, String? avatarUrl) async {
+    final response = await _dio.put(
+      '/api/companion/$id/avatar',
+      data: {'avatarUrl': avatarUrl},
+    );
     _unwrap(response);
   }
 
@@ -210,6 +234,48 @@ class ApiService {
   Future<UserSubscription> getCurrentSubscription() async {
     final response = await _dio.get('/api/subscription/current');
     return UserSubscription.fromJson(_unwrap(response) as Map<String, dynamic>);
+  }
+
+  // ==================== 支付模块 ====================
+
+  /// 创建支付订单
+  Future<CreatePaymentResponse> createPayment(int planId) async {
+    final response = await _dio.post(
+      '/api/payment/create',
+      data: {'planId': planId},
+    );
+    return CreatePaymentResponse.fromJson(
+      _unwrap(response) as Map<String, dynamic>,
+    );
+  }
+
+  /// 查询支付订单状态
+  Future<PaymentOrder> getPaymentStatus(String orderNo) async {
+    final response = await _dio.get(
+      '/api/payment/status',
+      queryParameters: {'orderNo': orderNo},
+    );
+    return PaymentOrder.fromJson(_unwrap(response) as Map<String, dynamic>);
+  }
+
+  // ==================== 文件上传模块 ====================
+
+  /// 单文件上传
+  Future<UploadResult> uploadFile(String filePath) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath),
+    });
+    final response = await _dio.post('/api/file/upload', data: formData);
+    return UploadResult.fromJson(_unwrap(response) as Map<String, dynamic>);
+  }
+
+  /// 删除文件
+  Future<void> deleteFile(String filePath) async {
+    final response = await _dio.delete(
+      '/api/file/delete',
+      queryParameters: {'filePath': filePath},
+    );
+    _unwrap(response);
   }
 }
 
@@ -312,4 +378,34 @@ class SendMessageRequest {
     if (contentType != null) 'contentType': contentType,
     if (sceneMode != null) 'sceneMode': sceneMode,
   };
+}
+
+/// 文件上传结果
+class UploadResult {
+  final String fileName;
+  final String savedName;
+  final String filePath;
+  final String url;
+  final int fileSize;
+  final String fileType;
+
+  UploadResult({
+    required this.fileName,
+    required this.savedName,
+    required this.filePath,
+    required this.url,
+    required this.fileSize,
+    required this.fileType,
+  });
+
+  factory UploadResult.fromJson(Map<String, dynamic> json) {
+    return UploadResult(
+      fileName: json['fileName'] as String? ?? '',
+      savedName: json['savedName'] as String? ?? '',
+      filePath: json['filePath'] as String? ?? '',
+      url: json['url'] as String? ?? '',
+      fileSize: (json['fileSize'] as num?)?.toInt() ?? 0,
+      fileType: json['fileType'] as String? ?? '',
+    );
+  }
 }

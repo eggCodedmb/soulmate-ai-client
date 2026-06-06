@@ -151,137 +151,99 @@ class _PartnerManagePageState extends ConsumerState<PartnerManagePage> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: AppShadows.level1(context),
-        ),
-        child: Row(
-          children: [
-            // 头像
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [
-                    isLight ? colors.light : colors.dark,
-                    (isLight ? colors.light : colors.dark).withOpacity(0.5),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: (isLight ? colors.light : colors.dark).withOpacity(0.5),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Icon(
-                Icons.favorite_rounded,
-                size: 32,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-            const SizedBox(width: 16),
-            // 信息
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        companion.name,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isLight ? colors.light : colors.dark,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          relationshipLabels[companion.relationshipType] ??
-                              companion.relationshipType,
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ),
+      child: GestureDetector(
+        onTap: () => context.push('/partners/detail/${companion.id}'),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: AppShadows.level1(context),
+          ),
+          child: Row(
+            children: [
+              // 头像
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      isLight ? colors.light : colors.dark,
+                      (isLight ? colors.light : colors.dark).withOpacity(0.5),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '性别：${genderLabels[companion.gender] ?? '未知'} | 性格：${companion.personalityKeys.join("、")}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  boxShadow: [
+                    BoxShadow(
+                      color: (isLight ? colors.light : colors.dark).withOpacity(0.5),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '创建于 ${_formatDate(companion.createTime)}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ],
+                ),
+                child: Icon(
+                  Icons.favorite_rounded,
+                  size: 32,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 16),
+              // 信息
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          companion.name,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isLight ? colors.light : colors.dark,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            relationshipLabels[companion.relationshipType] ??
+                                companion.relationshipType,
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      '性别：${genderLabels[companion.gender] ?? '未知'} | 性格：${companion.personalityKeys.join("、")}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '创建于 ${_formatDate(companion.createTime)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            // 操作按钮
-            PopupMenuButton<String>(
-              icon: Icon(
-                Icons.more_vert,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              // 箭头指示
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
               ),
-              onSelected: (value) async {
-                switch (value) {
-                  case 'edit':
-                    // TODO: 跳转到编辑伴侣页
-                    break;
-                  case 'chat':
-                    _startChat(companion);
-                    break;
-                  case 'delete':
-                    _showDeleteConfirm(context, companion);
-                    break;
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: ListTile(
-                    leading: Icon(Icons.edit_outlined),
-                    title: Text('编辑伴侣'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'chat',
-                  child: ListTile(
-                    leading: Icon(Icons.chat_outlined),
-                    title: Text('开始聊天'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: ListTile(
-                    leading: Icon(Icons.delete_outline, color: Colors.red),
-                    title: Text('删除伴侣', style: TextStyle(color: Colors.red)),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -381,22 +343,24 @@ class _CreatePartnerSheet extends ConsumerStatefulWidget {
 
 class _CreatePartnerSheetState extends ConsumerState<_CreatePartnerSheet> {
   final _nameController = TextEditingController();
+  final _descriptionController = TextEditingController();
   int _selectedGender = 2; // 默认女
   String _selectedRelationship = 'lover';
+  String _selectedSpeakingStyle = 'casual';
   final List<String> _selectedPersonalities = [];
   bool _isCreating = false;
 
   final List<Map<String, dynamic>> _genders = [
-    {'value': 1, 'label': '男'},
-    {'value': 2, 'label': '女'},
-    {'value': 3, 'label': '非二元'},
+    {'value': 1, 'label': '男', 'icon': Icons.male_rounded},
+    {'value': 2, 'label': '女', 'icon': Icons.female_rounded},
+    {'value': 3, 'label': '非二元', 'icon': Icons.transgender_rounded},
   ];
 
-  final List<Map<String, String>> _relationships = [
-    {'value': 'lover', 'label': '恋人', 'icon': '💕'},
-    {'value': 'friend', 'label': '挚友', 'icon': '🤝'},
-    {'value': 'mentor', 'label': '导师', 'icon': '📚'},
-    {'value': 'confidant', 'label': '树洞', 'icon': '🌳'},
+  final List<Map<String, dynamic>> _relationships = [
+    {'value': 'lover', 'label': '恋人', 'icon': Icons.favorite_rounded},
+    {'value': 'friend', 'label': '挚友', 'icon': Icons.handshake_rounded},
+    {'value': 'mentor', 'label': '导师', 'icon': Icons.school_rounded},
+    {'value': 'confidant', 'label': '树洞', 'icon': Icons.park_rounded},
   ];
 
   final List<Map<String, String>> _personalities = [
@@ -408,9 +372,19 @@ class _CreatePartnerSheetState extends ConsumerState<_CreatePartnerSheet> {
     {'value': 'cool', 'label': '高冷'},
   ];
 
+  final List<Map<String, String>> _speakingStyles = [
+    {'value': 'casual', 'label': '日常口语'},
+    {'value': 'formal', 'label': '正式礼貌'},
+    {'value': 'cute', 'label': '软萌可爱'},
+    {'value': 'cool', 'label': '简洁冷酷'},
+    {'value': 'humorous', 'label': '幽默风趣'},
+    {'value': 'poetic', 'label': '文艺诗意'},
+  ];
+
   @override
   void dispose() {
     _nameController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -433,6 +407,10 @@ class _CreatePartnerSheetState extends ConsumerState<_CreatePartnerSheet> {
           gender: _selectedGender,
           relationshipType: _selectedRelationship,
           personalityKeys: _selectedPersonalities,
+          speakingStyle: _selectedSpeakingStyle,
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
         ),
       );
 
@@ -523,19 +501,59 @@ class _CreatePartnerSheetState extends ConsumerState<_CreatePartnerSheet> {
           // 性别选择
           Text('性别', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          SegmentedButton<int>(
-            segments: _genders.map((gender) {
-              return ButtonSegment<int>(
-                value: gender['value'] as int,
-                label: Text(gender['label'] as String),
+          Row(
+            children: _genders.map((gender) {
+              final isSelected = _selectedGender == gender['value'];
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: gender != _genders.last ? 8 : 0,
+                  ),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedGender = gender['value'] as int),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeInOut,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
+                            : Theme.of(context).colorScheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.outline.withOpacity(0.15),
+                          width: isSelected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            gender['icon'] as IconData,
+                            size: 18,
+                            color: isSelected
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            gender['label'] as String,
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: isSelected
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               );
             }).toList(),
-            selected: {_selectedGender},
-            onSelectionChanged: (selected) {
-              setState(() {
-                _selectedGender = selected.first;
-              });
-            },
           ),
           const SizedBox(height: 24),
 
@@ -554,7 +572,7 @@ class _CreatePartnerSheetState extends ConsumerState<_CreatePartnerSheet> {
               return GestureDetector(
                 onTap: () {
                   setState(() {
-                    _selectedRelationship = rel['value']!;
+                    _selectedRelationship = rel['value'] as String;
                   });
                 },
                 child: Container(
@@ -574,10 +592,16 @@ class _CreatePartnerSheetState extends ConsumerState<_CreatePartnerSheet> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(rel['icon']!, style: const TextStyle(fontSize: 24)),
+                      Icon(
+                        rel['icon'] as IconData,
+                        size: 20,
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                       const SizedBox(width: 8),
                       Text(
-                        rel['label']!,
+                        rel['label'] as String,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ],
@@ -612,6 +636,42 @@ class _CreatePartnerSheetState extends ConsumerState<_CreatePartnerSheet> {
                 },
               );
             }).toList(),
+          ),
+          const SizedBox(height: 24),
+
+          // 说话风格
+          Text('说话风格', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            value: _selectedSpeakingStyle,
+            decoration: const InputDecoration(
+              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            items: _speakingStyles.map((style) {
+              return DropdownMenuItem(
+                value: style['value'],
+                child: Text(style['label']!),
+              );
+            }).toList(),
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => _selectedSpeakingStyle = value);
+              }
+            },
+          ),
+          const SizedBox(height: 24),
+
+          // 描述/人设
+          Text('描述 / 人设', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _descriptionController,
+            maxLines: 4,
+            maxLength: 200,
+            decoration: const InputDecoration(
+              hintText: '描述你的伴侣人设、背景故事...',
+              alignLabelWithHint: true,
+            ),
           ),
           const SizedBox(height: 32),
 
