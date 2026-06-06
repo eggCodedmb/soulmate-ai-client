@@ -18,11 +18,16 @@ import '../storage/secure_storage.dart';
 import '../storage/local_storage.dart';
 import 'main_scaffold.dart';
 
+/// 全局路由观察器 — 用于页面可见性刷新
+final RouteObserver<ModalRoute<void>> routeObserver =
+    RouteObserver<ModalRoute<void>>();
+
 /// 路由配置
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/splash',
     debugLogDiagnostics: true,
+    observers: [routeObserver],
     routes: [
       // 启动页
       GoRoute(

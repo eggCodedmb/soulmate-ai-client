@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/routing/app_router.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
 import '../../core/theme/app_shadows.dart';
@@ -21,7 +22,7 @@ class HomePage extends ConsumerStatefulWidget {
   ConsumerState<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends ConsumerState<HomePage> {
+class _HomePageState extends ConsumerState<HomePage> with RouteAware {
   Companion? _currentCompanion;
   List<Conversation> _conversations = [];
   List<Memory> _memories = [];
@@ -38,6 +39,24 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void initState() {
     super.initState();
+    _loadData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  /// 从子页面返回时自动刷新
+  @override
+  void didPopNext() {
     _loadData();
   }
 
