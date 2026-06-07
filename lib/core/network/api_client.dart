@@ -7,13 +7,9 @@ import 'interceptors/logging_interceptor.dart';
 /// API客户端配置 - 支持主备地址自动切换
 class ApiClient {
   // 主备服务器地址
-  static const String primaryHost = '192.168.2.240';
-  static const String fallbackHost = '10.2.3.6';
-  static const int port = 8080;
+  static const String primaryBaseUrl = 'https://cupid-discard-ritzy.ngrok-free.dev';
+  static const String fallbackBaseUrl = 'http://10.2.3.6:8080';
   static const String apiPrefix = '/api';
-
-  static String get primaryBaseUrl => 'http://$primaryHost:$port';
-  static String get fallbackBaseUrl => 'http://$fallbackHost:$port';
 
   // 超时配置
   static const Duration connectTimeout = Duration(seconds: 5);
@@ -35,6 +31,7 @@ class ApiClient {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
         },
       ),
     );
@@ -49,7 +46,7 @@ class ApiClient {
 
   Dio get dio => _dio;
   bool get isUsingFallback => _usingFallback;
-  String get currentHost => _usingFallback ? fallbackHost : primaryHost;
+  String get currentHost => Uri.parse(currentBaseUrl).host;
   String get currentBaseUrl => _usingFallback ? fallbackBaseUrl : primaryBaseUrl;
 
   /// 将相对路径转为完整URL（用于图片等静态资源）
@@ -67,7 +64,7 @@ class ApiClient {
       _consecutiveFailures = 0;
       _dio.options.baseUrl = fallbackBaseUrl;
       if (kDebugMode) {
-        print('🔄 切换到备用服务器: $fallbackHost');
+        print('🔄 切换到备用服务器: $fallbackBaseUrl');
       }
     }
   }
@@ -79,7 +76,7 @@ class ApiClient {
       _consecutiveFailures = 0;
       _dio.options.baseUrl = primaryBaseUrl;
       if (kDebugMode) {
-        print('🔄 切换回主服务器: $primaryHost');
+        print('🔄 切换回主服务器: $primaryBaseUrl');
       }
     }
   }
@@ -107,8 +104,11 @@ class ApiClient {
       final testDio = Dio(BaseOptions(
         baseUrl: primaryBaseUrl,
         connectTimeout: const Duration(seconds: 3),
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+        },
       ));
-      await testDio.get('/health');
+      await testDio.get('$apiPrefix/health');
       switchToPrimary();
     } catch (_) {
       // 主地址仍然不可用，继续使用备用地址

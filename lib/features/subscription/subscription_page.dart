@@ -1,10 +1,10 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../core/network/api_service.dart';
-import '../../core/theme/app_shadows.dart';
 import '../../shared/models/subscription.dart';
 import 'payment_method_page.dart';
 import 'payment_webview_page.dart';
@@ -18,8 +18,47 @@ class SubscriptionPage extends ConsumerStatefulWidget {
   ConsumerState<SubscriptionPage> createState() => _SubscriptionPageState();
 }
 
-class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
+class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
+    with TickerProviderStateMixin {
   bool _isPaying = false;
+  late AnimationController _fadeController;
+  late AnimationController _slideController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _slideController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+    );
+
+    _fadeController.forward();
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) _slideController.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    _slideController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,30 +66,92 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
     final subscriptionAsync = ref.watch(currentSubscriptionProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('订阅会员'),
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await Future.wait([
-            ref.read(subscriptionPlansProvider.notifier).refresh(),
-            ref.read(currentSubscriptionProvider.notifier).refresh(),
-          ]);
-        },
-        child: ListView(
-          padding: const EdgeInsets.all(AppDimensions.paddingMedium),
-          children: [
-            // 区域 1: 当前订阅状态
-            _buildCurrentStatus(context, subscriptionAsync),
-            const SizedBox(height: AppDimensions.spacingLarge),
-            // 区域 2: 套餐选择
-            _buildPlanSection(context, plansAsync, subscriptionAsync),
-            const SizedBox(height: AppDimensions.spacingXLarge),
-            // 区域 3: 底部说明
-            _buildBottomNotes(context),
-            const SizedBox(height: AppDimensions.spacingXLarge),
-          ],
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF1A1A2E),
+              Color(0xFF16213E),
+              Color(0xFF0F3460),
+            ],
+          ),
         ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // 顶部导航栏
+              _buildAppBar(context),
+              // 主内容
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: RefreshIndicator(
+                      onRefresh: () async {
+                        await Future.wait([
+                          ref
+                              .read(subscriptionPlansProvider.notifier)
+                              .refresh(),
+                          ref
+                              .read(currentSubscriptionProvider.notifier)
+                              .refresh(),
+                        ]);
+                      },
+                      color: AppColors.brandPink,
+                      child: ListView(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        children: [
+                          // 区域 1: 当前订阅状态
+                          _buildCurrentStatus(context, subscriptionAsync),
+                          const SizedBox(height: 32),
+                          // 区域 2: 套餐选择
+                          _buildPlanSection(
+                              context, plansAsync, subscriptionAsync),
+                          const SizedBox(height: 32),
+                          // 区域 3: 底部说明
+                          _buildBottomNotes(context),
+                          const SizedBox(height: 32),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 顶部导航栏
+  Widget _buildAppBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                color: Colors.white, size: 22),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          const Spacer(),
+          const Text(
+            '订阅会员',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const Spacer(),
+          const SizedBox(width: 48), // 占位，保持标题居中
+        ],
       ),
     );
   }
@@ -62,17 +163,37 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
     AsyncValue<UserSubscription?> subscriptionAsync,
   ) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusLarge),
-        boxShadow: AppShadows.level1(context),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withOpacity(0.1),
+            Colors.white.withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.15),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: subscriptionAsync.when(
         loading: () => const Center(
           child: Padding(
-            padding: EdgeInsets.all(24),
-            child: CircularProgressIndicator(),
+            padding: EdgeInsets.all(32),
+            child: CircularProgressIndicator(
+              color: AppColors.brandPink,
+              strokeWidth: 2.5,
+            ),
           ),
         ),
         error: (e, _) => _buildFreeUserStatus(context),
@@ -86,63 +207,138 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
 
   /// 免费用户状态
   Widget _buildFreeUserStatus(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(
-              Icons.workspace_premium_outlined,
-              color: colorScheme.primary,
-              size: 28,
-            ),
-            const SizedBox(width: AppDimensions.spacingSmall),
-            Text(
-              '免费版',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppColors.brandPink, AppColors.brandLavender],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.brandPink.withOpacity(0.4),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
+                ],
+              ),
+              child: const Icon(
+                Icons.workspace_premium_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '免费版',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '升级会员解锁全部功能',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-        const SizedBox(height: AppDimensions.spacingMedium),
-        Text(
-          '每日消息额度',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+        const SizedBox(height: 24),
+        // 消息额度进度条
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '今日消息额度',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 13,
+                    ),
+                  ),
+                  const Text(
+                    '9 / 30 条',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-        ),
-        const SizedBox(height: AppDimensions.spacingXSmall),
-        Row(
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
                 child: LinearProgressIndicator(
                   value: 0.3,
-                  minHeight: 8,
-                  backgroundColor: colorScheme.outline.withOpacity(0.15),
-                  valueColor:
-                      AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                  minHeight: 10,
+                  backgroundColor: Colors.white.withOpacity(0.15),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    AppColors.brandPink,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: AppDimensions.spacingSmall),
-            Text(
-              '9 / 30 条',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          ],
+            ],
+          ),
         ),
-        const SizedBox(height: AppDimensions.spacingSmall),
-        Text(
-          '升级会员解锁无限消息',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        const SizedBox(height: 16),
+        // 升级提示
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.brandPink.withOpacity(0.2),
+                AppColors.brandLavender.withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppColors.brandPink.withOpacity(0.3),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.rocket_launch_rounded,
                 color: AppColors.brandPink,
+                size: 20,
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '升级会员解锁无限消息、高级记忆等功能',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -153,79 +349,154 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
     BuildContext context,
     UserSubscription subscription,
   ) {
-    final colorScheme = Theme.of(context).colorScheme;
     final planName = _getPlanNameById(subscription.planId);
     final endDate = subscription.endTime;
     final dateStr =
         '${endDate.year}/${endDate.month.toString().padLeft(2, '0')}/${endDate.day.toString().padLeft(2, '0')}';
+    final daysLeft = endDate.difference(DateTime.now()).inDays;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(
-              Icons.workspace_premium_rounded,
-              color: AppColors.brandPink,
-              size: 28,
-            ),
-            const SizedBox(width: AppDimensions.spacingSmall),
-            Text(
-              planName,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const Spacer(),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.success.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFFD700).withOpacity(0.4),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: Text(
-                '生效中',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: AppColors.success,
-                      fontWeight: FontWeight.w500,
+              child: const Icon(
+                Icons.workspace_premium_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        planName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4CAF50).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: const Color(0xFF4CAF50).withOpacity(0.5),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle_rounded,
+                              color: Color(0xFF4CAF50),
+                              size: 14,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              '生效中',
+                              style: TextStyle(
+                                color: Color(0xFF4CAF50),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '还有 $daysLeft 天到期',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.6),
+                      fontSize: 13,
                     ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
-        const SizedBox(height: AppDimensions.spacingMedium),
-        Row(
-          children: [
-            Icon(
-              Icons.calendar_today_outlined,
-              size: 16,
-              color: colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '到期时间: $dateStr',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          ],
+        const SizedBox(height: 24),
+        // 订阅信息卡片
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              _buildInfoRow(
+                Icons.calendar_today_rounded,
+                '到期时间',
+                dateStr,
+              ),
+              const SizedBox(height: 12),
+              Divider(color: Colors.white.withOpacity(0.1), height: 1),
+              const SizedBox(height: 12),
+              _buildInfoRow(
+                Icons.autorenew_rounded,
+                '自动续费',
+                subscription.autoRenew == 1 ? '已开启' : '已关闭',
+                valueColor: subscription.autoRenew == 1
+                    ? const Color(0xFF4CAF50)
+                    : Colors.orange,
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: AppDimensions.spacingSmall),
-        Row(
-          children: [
-            Icon(
-              Icons.autorenew_rounded,
-              size: 16,
-              color: colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              subscription.autoRenew == 1 ? '自动续费已开启' : '自动续费已关闭',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          ],
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value,
+      {Color? valueColor}) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.white.withOpacity(0.6), size: 18),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 14,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor ?? Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ],
     );
@@ -238,207 +509,380 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
     AsyncValue<List<SubscriptionPlan>> plansAsync,
     AsyncValue<UserSubscription?> subscriptionAsync,
   ) {
-    return plansAsync.when(
-      loading: () => const Center(
-        child: Padding(
-          padding: EdgeInsets.all(48),
-          child: CircularProgressIndicator(),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '选择套餐',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+          ),
         ),
-      ),
-      error: (e, _) => Center(
-        child: Column(
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 48,
-              color: Theme.of(context).colorScheme.error,
+        const SizedBox(height: 8),
+        Text(
+          '选择适合你的会员套餐',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.6),
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(height: 24),
+        plansAsync.when(
+          loading: () => const Center(
+            child: Padding(
+              padding: EdgeInsets.all(48),
+              child: CircularProgressIndicator(
+                color: AppColors.brandPink,
+                strokeWidth: 2.5,
+              ),
             ),
-            const SizedBox(height: 8),
-            Text('加载失败，请下拉刷新'),
-          ],
-        ),
-      ),
-      data: (plans) {
-        // 按 displayOrder 排序，排除免费套餐
-        final sortedPlans = plans
-            .where((p) => p.planCode != 'FREE' && p.status == 1)
-            .toList()
-          ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
-
-        final currentPlanId = subscriptionAsync.valueOrNull?.planId;
-        // 推荐套餐: 中间档（Premium）
-        final recommendedCode = sortedPlans.length >= 2
-            ? sortedPlans[1].planCode
-            : null;
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '选择套餐',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+          ),
+          error: (e, _) => Center(
+            child: Column(
+              children: [
+                Icon(
+                  Icons.error_outline_rounded,
+                  size: 48,
+                  color: Colors.white.withOpacity(0.5),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '加载失败，请下拉刷新',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 14,
                   ),
+                ),
+              ],
             ),
-            const SizedBox(height: AppDimensions.spacingMedium),
-            ...sortedPlans.map((plan) => Padding(
-                  padding:
-                      const EdgeInsets.only(bottom: AppDimensions.spacingMedium),
+          ),
+          data: (plans) {
+            // 按 displayOrder 排序，排除免费套餐
+            final sortedPlans = plans
+                .where((p) => p.planCode != 'FREE' && p.status == 1)
+                .toList()
+              ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+
+            final currentPlanId = subscriptionAsync.valueOrNull?.planId;
+            // 获取当前套餐的 displayOrder，用于判断是否降级
+            final currentPlanDisplayOrder = currentPlanId != null
+                ? sortedPlans
+                        .where((p) => p.id == currentPlanId)
+                        .firstOrNull
+                        ?.displayOrder ??
+                    0
+                : 0;
+            // 推荐套餐: 中间档（Premium）
+            final recommendedCode =
+                sortedPlans.length >= 2 ? sortedPlans[1].planCode : null;
+
+            return Column(
+              children: sortedPlans.asMap().entries.map((entry) {
+                final index = entry.key;
+                final plan = entry.value;
+                final isCurrent = plan.id == currentPlanId;
+                // 判断是否降级：目标套餐 displayOrder <= 当前套餐 displayOrder
+                final isDowngrade = currentPlanId != null &&
+                    plan.displayOrder <= currentPlanDisplayOrder;
+                return Padding(
+                  padding: EdgeInsets.only(
+                    bottom: index < sortedPlans.length - 1 ? 20 : 0,
+                  ),
                   child: _buildPlanCard(
                     context,
                     plan,
+                    index: index,
                     isRecommended: plan.planCode == recommendedCode,
-                    isCurrent: plan.id == currentPlanId,
+                    isCurrent: isCurrent,
+                    isDowngrade: isDowngrade && !isCurrent,
                   ),
-                )),
-          ],
-        );
-      },
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ],
     );
   }
 
   Widget _buildPlanCard(
     BuildContext context,
     SubscriptionPlan plan, {
+    int index = 0,
     bool isRecommended = false,
     bool isCurrent = false,
+    bool isDowngrade = false,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
     final benefits = _getPlanBenefits(context, plan);
+    final isDisabled = isCurrent || isDowngrade;
+
+    // 卡片渐变色
+    final gradients = [
+      [const Color(0xFF667eea), const Color(0xFF764ba2)], // 蓝紫
+      [const Color(0xFFf093fb), const Color(0xFFf5576c)], // 粉红（推荐）
+      [const Color(0xFF4facfe), const Color(0xFF00f2fe)], // 青蓝
+    ];
+
+    final gradientIndex = isRecommended ? 1 : (index % 2 == 0 ? 0 : 2);
+    final gradient = gradients[gradientIndex];
 
     return Container(
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusMedium),
-        border: isRecommended
-            ? Border.all(
-                color: AppColors.brandPink,
-                width: 1.5,
-              )
-            : null,
-        boxShadow: AppShadows.level1(context),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: gradient[0].withOpacity(isRecommended ? 0.4 : 0.2),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 套餐名 + 价格
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withOpacity(0.15),
+                Colors.white.withOpacity(0.05),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: isRecommended
+                  ? AppColors.brandPink.withOpacity(0.6)
+                  : Colors.white.withOpacity(0.15),
+              width: isRecommended ? 2 : 1,
+            ),
+          ),
+          child: Stack(
+            children: [
+              // 背景装饰
+              if (isRecommended)
+                Positioned(
+                  top: -30,
+                  right: -30,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          AppColors.brandPink.withOpacity(0.3),
+                          AppColors.brandPink.withOpacity(0.0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              // 内容
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      plan.planName,
-                      style:
-                          Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
+                    // 套餐名 + 推荐标签
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: gradient,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            plan.planName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (isRecommended) ...[
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFD700).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color:
+                                    const Color(0xFFFFD700).withOpacity(0.5),
                               ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '¥${plan.priceMonthly.toInt()}',
-                      style:
-                          Theme.of(context).textTheme.titleLarge?.copyWith(
-                                color: AppColors.brandPink,
-                                fontWeight: FontWeight.w700,
-                              ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
-                      child: Text(
-                        '/月',
-                        style:
-                            Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.star_rounded,
+                                  color: Color(0xFFFFD700),
+                                  size: 14,
                                 ),
+                                SizedBox(width: 4),
+                                Text(
+                                  '推荐',
+                                  style: TextStyle(
+                                    color: Color(0xFFFFD700),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    // 价格
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '¥${plan.priceMonthly.toInt()}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 36,
+                            fontWeight: FontWeight.w800,
+                            height: 1,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            '/月',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.6),
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    // 分割线
+                    Container(
+                      height: 1,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.white.withOpacity(0.0),
+                            Colors.white.withOpacity(0.2),
+                            Colors.white.withOpacity(0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // 权益列表
+                    ...benefits.map((benefit) => Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF4CAF50)
+                                      .withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.check_rounded,
+                                  color: Color(0xFF4CAF50),
+                                  size: 16,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(
+                                  benefit,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: 14,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )),
+                    const SizedBox(height: 28),
+                    // 订阅按钮
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: isDisabled || _isPaying
+                            ? null
+                            : () => _startPayment(context, plan),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          padding: EdgeInsets.zero,
+                        ),
+                        child: Ink(
+                          decoration: BoxDecoration(
+                            gradient: isDisabled
+                                ? null
+                                : LinearGradient(
+                                    colors: gradient,
+                                  ),
+                            color: isDisabled
+                                ? Colors.white.withOpacity(0.1)
+                                : null,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Container(
+                            alignment: Alignment.center,
+                            child: _isPaying && !isDisabled
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Text(
+                                    isCurrent
+                                        ? '当前套餐'
+                                        : isDowngrade
+                                            ? '不可降级'
+                                            : '立即订阅',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDisabled
+                                          ? Colors.white.withOpacity(0.4)
+                                          : Colors.white,
+                                    ),
+                                  ),
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: AppDimensions.spacingMedium),
-                // 权益列表
-                ...benefits.map((benefit) => Padding(
-                      padding: const EdgeInsets.only(
-                          bottom: AppDimensions.spacingSmall),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.check_circle_outline_rounded,
-                            size: 18,
-                            color: AppColors.success,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              benefit,
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )),
-                const SizedBox(height: AppDimensions.spacingMedium),
-                // 订阅按钮
-                SizedBox(
-                  width: double.infinity,
-                  height: AppDimensions.buttonHeight,
-                  child: ElevatedButton(
-                    onPressed: isCurrent || _isPaying
-                        ? null
-                        : () => _startPayment(context, plan),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          isRecommended ? AppColors.brandPink : null,
-                      foregroundColor:
-                          isRecommended ? Colors.white : null,
-                    ),
-                    child: _isPaying && !isCurrent
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(isCurrent ? '当前套餐' : '立即订阅'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // 推荐 badge
-          if (isRecommended)
-            Positioned(
-              top: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.brandPink, AppColors.brandLavender],
-                  ),
-                  borderRadius: BorderRadius.only(
-                    topRight: Radius.circular(AppDimensions.radiusMedium),
-                    bottomLeft: Radius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  '推荐',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
               ),
-            ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -446,31 +890,61 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
   // ==================== 区域 3: 底部说明 ====================
 
   Widget _buildBottomNotes(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Column(
-      children: [
-        Text(
-          '订阅将自动续费，到期前24小时自动扣款。如需取消，请在到期前至少24小时关闭自动续费。取消后可正常使用至到期日。',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                height: 1.5,
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.1),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: Colors.white.withOpacity(0.5),
+                size: 18,
               ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: AppDimensions.spacingSmall),
-        GestureDetector(
-          onTap: () {
-            // TODO: 跳转订阅条款页面
-          },
-          child: Text(
-            '《订阅服务条款》',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colorScheme.primary,
-                  decoration: TextDecoration.underline,
+              const SizedBox(width: 10),
+              Text(
+                '订阅须知',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.8),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
+              ),
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 16),
+          Text(
+            '订阅将自动续费，到期前24小时自动扣款。如需取消，请在到期前至少24小时关闭自动续费。取消后可正常使用至到期日。',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.5),
+              fontSize: 12,
+              height: 1.8,
+            ),
+          ),
+          const SizedBox(height: 16),
+          GestureDetector(
+            onTap: () {
+              // TODO: 跳转订阅条款页面
+            },
+            child: Text(
+              '《订阅服务条款》',
+              style: TextStyle(
+                color: AppColors.brandPink.withOpacity(0.8),
+                fontSize: 12,
+                decoration: TextDecoration.underline,
+                decorationColor: AppColors.brandPink.withOpacity(0.5),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -504,9 +978,8 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
     return benefits;
   }
 
-  /// 根据 planId 推断套餐名（当没有套餐列表数据时的降级方案）
+  /// 根据 planId 推断套餐名
   String _getPlanNameById(int planId) {
-    // 通常 planId 1=FREE, 2=BASIC, 3=PREMIUM, 4=ULTIMATE
     const names = {1: '免费版', 2: '基础版', 3: '高级版', 4: '尊享版'};
     return names[planId] ?? '会员';
   }
@@ -519,22 +992,11 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
     if (_isPaying) return;
 
     // 确认弹窗
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('订阅 ${plan.planName}'),
-        content: Text('月费 ¥${plan.priceMonthly.toInt()}/月'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('确认支付'),
-          ),
-        ],
-      ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _buildPaymentConfirmSheet(ctx, plan),
     );
 
     if (confirmed != true || !context.mounted) return;
@@ -558,15 +1020,21 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
       );
 
       if (paymentChannel == null || !context.mounted) {
-        // 用户取消选择
         return;
       }
 
-      // 目前仅支持支付宝，其他渠道提示暂未开放
+      // 目前仅支持支付宝
       if (paymentChannel != 'alipay') {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('该支付方式暂未开放，敬请期待')),
+            SnackBar(
+              content: const Text('该支付方式暂未开放，敬请期待'),
+              backgroundColor: Colors.orange.withOpacity(0.9),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
           );
         }
         return;
@@ -591,13 +1059,135 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('支付创建失败: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
+            backgroundColor: Colors.red.withOpacity(0.9),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       }
     } finally {
       if (mounted) setState(() => _isPaying = false);
     }
+  }
+
+  /// 支付确认底部弹窗
+  Widget _buildPaymentConfirmSheet(BuildContext context, SubscriptionPlan plan) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 拖拽指示器
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 24),
+          // 标题
+          Text(
+            '确认订阅 ${plan.planName}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 16),
+          // 价格信息
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '¥${plan.priceMonthly.toInt()}',
+                  style: const TextStyle(
+                    color: AppColors.brandPink,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  ' /月',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          // 按钮
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 56,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    style: TextButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(
+                          color: Colors.white.withOpacity(0.2),
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      '取消',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: SizedBox(
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.brandPink,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      '确认支付',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
   }
 
   /// 轮询支付结果
@@ -609,16 +1199,47 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
 
     // 显示加载弹窗
     if (!context.mounted) return;
-    unawaited(showDialog<void>(
+    showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    ));
+      builder: (_) => Container(
+        color: Colors.black.withOpacity(0.5),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A2E),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.1),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(
+                  color: AppColors.brandPink,
+                  strokeWidth: 3,
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  '正在确认支付...',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.8),
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
 
-    // 最多轮询 10 次，每次间隔 2 秒
+    // 最多轮询 15 次，每次间隔 3 秒，总计约 45 秒
     var paid = false;
-    for (var i = 0; i < 10; i++) {
-      await Future<void>.delayed(const Duration(seconds: 2));
+    for (var i = 0; i < 15; i++) {
+      await Future<void>.delayed(const Duration(seconds: 3));
       try {
         final order = await api.getPaymentStatus(orderNo);
         if (order.isPaid) {
@@ -630,8 +1251,10 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
       }
     }
 
-    // 关闭加载弹窗
-    if (context.mounted) Navigator.of(context).pop();
+    // 关闭加载弹窗（使用 rootNavigator 确保关闭正确的对话框）
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
 
     // 刷新订阅数据
     await ref.read(subscriptionPlansProvider.notifier).refresh();
@@ -640,18 +1263,113 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
     if (!context.mounted) return;
 
     if (paid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🎉 支付成功，会员已生效！'),
-          backgroundColor: AppColors.success,
-        ),
-      );
+      _showSuccessDialog(context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('未检测到支付成功，请稍后查看或重试'),
+        SnackBar(
+          content: const Text('未检测到支付成功，请稍后查看或重试'),
+          backgroundColor: Colors.orange.withOpacity(0.9),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     }
+  }
+
+  /// 支付成功弹窗
+  void _showSuccessDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A2E),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.1),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.brandPink.withOpacity(0.3),
+                blurRadius: 30,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 成功图标
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF4CAF50), Color(0xFF66BB6A)],
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF4CAF50).withOpacity(0.4),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                '🎉 支付成功',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '会员已生效，尽情享受吧！',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.7),
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.brandPink,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    '好的',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
