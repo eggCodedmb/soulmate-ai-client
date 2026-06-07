@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:ui';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,8 +30,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final FocusNode _inputFocusNode = FocusNode();
   final List<Message> _messages = [];
   bool _isTyping = false;
+  bool _isStreaming = false;
   bool _isLoading = true;
   bool _hasText = false;
+  CancelToken? _streamCancelToken;
   int _currentPage = 1;
   bool _hasMore = true;
   bool _isLoadingMore = false;
@@ -66,6 +70,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   @override
   void dispose() {
+    _streamCancelToken?.cancel('页面退出');
     _messageController.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();
@@ -116,7 +121,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _sendMessage() async {
     final content = _messageController.text.trim();
-    if (content.isEmpty || _companionId == null) return;
+    if (content.isEmpty || _companionId == null || _isStreaming) return;
 
     HapticFeedback.lightImpact();
 
@@ -133,30 +138,88 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _messageController.clear();
     _scrollToBottom();
 
-    try {
-      final apiService = ref.read(apiServiceProvider);
-      setState(() => _isTyping = true);
+    // 插入空的 AI 回复占位（流式填充，放在 index 0 = 屏幕底部）
+    final aiPlaceholder = Message(
+      id: 0,
+      conversationId: _conversationId,
+      senderType: 'companion',
+      content: '',
+      createTime: DateTime.now(),
+    );
+    setState(() {
+      _isStreaming = true;
+      _isTyping = false; // 用流式代替打字指示器
+      _messages.insert(0, aiPlaceholder);
+    });
 
-      final aiReply = await apiService.sendMessage(
+    final apiService = ref.read(apiServiceProvider);
+    _streamCancelToken = CancelToken();
+    final buffer = StringBuffer();
+    bool hasError = false;
+
+    try {
+      await for (final chatResponse in apiService.streamChat(
         SendMessageRequest(
           conversationId: _conversationId,
           companionId: _companionId!,
           content: content,
         ),
-      );
+        cancelToken: _streamCancelToken,
+      )) {
+        if (chatResponse.error != null && chatResponse.error!.isNotEmpty) {
+          hasError = true;
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(chatResponse.error!)),
+            );
+          }
+          break;
+        }
 
-      setState(() => _isTyping = false);
-      setState(() => _messages.insert(1, aiReply));
-      _scrollToBottom();
+        if (chatResponse.content != null && chatResponse.content!.isNotEmpty) {
+          buffer.write(chatResponse.content);
+          // 更新占位消息的内容（index 0 = 屏幕底部）
+          if (mounted) {
+            setState(() {
+              _messages[0] = Message(
+                id: 0,
+                conversationId: _conversationId,
+                senderType: 'companion',
+                content: buffer.toString(),
+                createTime: aiPlaceholder.createTime,
+              );
+            });
+            _scrollToBottom();
+          }
+        }
 
-      await _refreshMessages();
+        if (chatResponse.done) break;
+      }
     } catch (e) {
-      debugPrint('发送消息失败: $e');
-      setState(() => _isTyping = false);
+      debugPrint('流式消息异常: $e');
+      hasError = true;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('发送失败: $e')),
         );
+      }
+    }
+
+    _streamCancelToken = null;
+
+    if (mounted) {
+      setState(() => _isStreaming = false);
+
+      // 如果没有错误且有内容，刷新消息列表获取服务端真实数据
+      if (!hasError && buffer.isNotEmpty) {
+        await _refreshMessages();
+      } else if (!hasError && buffer.isEmpty) {
+        // AI 没返回任何内容，移除空占位
+        setState(() {
+          if (_messages.isNotEmpty && _messages[0].content.isEmpty) {
+            _messages.removeAt(0);
+          }
+        });
       }
     }
   }
@@ -924,6 +987,32 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   Widget _buildSendButton(bool isDark) {
+    // 流式传输中：显示停止按钮
+    if (_isStreaming) {
+      return GestureDetector(
+        onTap: () {
+          _streamCancelToken?.cancel('用户取消');
+          _streamCancelToken = null;
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F3F8),
+          ),
+          child: Icon(
+            Icons.stop_rounded,
+            size: 22,
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.6)
+                : Colors.black.withValues(alpha: 0.5),
+          ),
+        ),
+      );
+    }
+
     return GestureDetector(
       onTap: _hasText ? _sendMessage : null,
       child: AnimatedContainer(

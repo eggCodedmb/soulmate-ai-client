@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/models/user.dart';
 import '../../shared/models/companion.dart';
@@ -183,6 +186,93 @@ class ApiService {
   Future<Message> sendMessage(SendMessageRequest request) async {
     final response = await _dio.post('/api/chat/send', data: request.toJson());
     return Message.fromJson(_unwrap(response) as Map<String, dynamic>);
+  }
+
+  /// 发送消息（SSE流式）
+  ///
+  /// 返回 Stream<ChatResponse>，逐 chunk 推送 AI 回复。
+  /// 当 ChatResponse.done == true 时流结束。
+  Stream<ChatResponse> streamChat(
+    SendMessageRequest request, {
+    CancelToken? cancelToken,
+  }) {
+    final controller = StreamController<ChatResponse>();
+
+    () async {
+      try {
+        final response = await _dio.post<ResponseBody>(
+          '/api/chat/stream',
+          data: request.toJson(),
+          options: Options(
+            responseType: ResponseType.stream,
+            receiveTimeout: const Duration(seconds: 120),
+            headers: {'Accept': 'text/event-stream'},
+          ),
+          cancelToken: cancelToken,
+        );
+
+        final stream = response.data!.stream;
+        String buffer = '';
+
+        await for (final chunk in stream) {
+          buffer += utf8.decode(chunk);
+
+          // SSE 以空行分隔事件
+          while (buffer.contains('\n')) {
+            final index = buffer.indexOf('\n');
+            final line = buffer.substring(0, index).trim();
+            buffer = buffer.substring(index + 1);
+
+            if (line.startsWith('data:')) {
+              final jsonStr = line.substring(5).trim();
+              if (jsonStr.isEmpty) continue;
+
+              try {
+                final jsonMap = json.decode(jsonStr) as Map<String, dynamic>;
+                final chatResponse = ChatResponse.fromJson(jsonMap);
+                controller.add(chatResponse);
+
+                if (chatResponse.done) {
+                  await controller.close();
+                  return;
+                }
+              } catch (e) {
+                debugPrint('SSE JSON解析失败: $jsonStr, error: $e');
+              }
+            }
+          }
+        }
+
+        // 流正常结束但没收到 done=true
+        if (!controller.isClosed) {
+          await controller.close();
+        }
+      } on DioException catch (e) {
+        if (e.type == DioExceptionType.cancel) {
+          debugPrint('SSE流被取消');
+        } else {
+          debugPrint('SSE流异常: ${e.type} ${e.message}');
+          controller.add(ChatResponse(
+            error: '网络异常，请稍后重试',
+            done: true,
+          ));
+        }
+        if (!controller.isClosed) {
+          await controller.close();
+        }
+      } catch (e) {
+        debugPrint('SSE流未知异常: $e');
+        controller.add(ChatResponse(
+          error: 'AI服务暂时不可用',
+          done: true,
+        ));
+        if (!controller.isClosed) {
+          await controller.close();
+        }
+      }
+    }();
+
+    return controller.stream;
   }
 
   // ==================== 记忆模块 ====================
