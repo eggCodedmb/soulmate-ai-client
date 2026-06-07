@@ -735,17 +735,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           ),
                         ],
                       ),
-                      child: Text(
-                        message.content,
-                        style: TextStyle(
-                          fontSize: 15,
-                          height: 1.55,
-                          color: isUser
-                              ? Colors.white
-                              : isDark
-                                  ? Colors.white.withValues(alpha: 0.88)
-                                  : const Color(0xFF1A1A2E),
-                        ),
+                      child: _buildMessageText(
+                        message, isUser, isDark,
                       ),
                     ),
                   ),
@@ -861,6 +852,42 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           : isDark
               ? Colors.white.withValues(alpha: 0.2)
               : Colors.black.withValues(alpha: 0.2),
+    );
+  }
+
+  /// 构建消息文本，流式传输时带闪烁光标
+  Widget _buildMessageText(Message message, bool isUser, bool isDark) {
+    final isStreamingThis = _isStreaming &&
+        !isUser &&
+        message.id == 0;
+
+    final textColor = isUser
+        ? Colors.white
+        : isDark
+            ? Colors.white.withValues(alpha: 0.88)
+            : const Color(0xFF1A1A2E);
+
+    if (!isStreamingThis) {
+      return Text(
+        message.content,
+        style: TextStyle(fontSize: 15, height: 1.55, color: textColor),
+      );
+    }
+
+    // 流式传输中：文字 + 闪烁光标
+    return RichText(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: message.content,
+            style: TextStyle(fontSize: 15, height: 1.55, color: textColor),
+          ),
+          WidgetSpan(
+            child: _BlinkingCursor(color: textColor),
+            alignment: PlaceholderAlignment.middle,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1318,6 +1345,58 @@ class _MessageBubbleWrapperState extends State<_MessageBubbleWrapper>
       child: SlideTransition(
         position: _offset,
         child: widget.child,
+      ),
+    );
+  }
+}
+
+// ==================== 闪烁光标组件 ====================
+
+class _BlinkingCursor extends StatefulWidget {
+  final Color color;
+  const _BlinkingCursor({required this.color});
+
+  @override
+  State<_BlinkingCursor> createState() => _BlinkingCursorState();
+}
+
+class _BlinkingCursorState extends State<_BlinkingCursor>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _controller.value,
+          child: child,
+        );
+      },
+      child: Text(
+        '▎',
+        style: TextStyle(
+          fontSize: 15,
+          height: 1.55,
+          color: widget.color,
+          fontWeight: FontWeight.w300,
+        ),
       ),
     );
   }
