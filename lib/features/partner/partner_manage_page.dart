@@ -677,7 +677,8 @@ class _PartnerManagePageState extends ConsumerState<PartnerManagePage> {
                           ...companion.personalityKeys.take(3).map((key) {
                             final label = _personalityLabels[key] ?? key;
                             final pColors = AppColors.personalityColors[key];
-                            final pColor = pColors != null
+                            // 使用固定的深色文字颜色，确保可读性
+                            final bgColor = pColors != null
                                 ? (isDark ? pColors.dark : pColors.light)
                                 : AppColors.brandLavender;
                             return Container(
@@ -686,17 +687,17 @@ class _PartnerManagePageState extends ConsumerState<PartnerManagePage> {
                                 vertical: 3,
                               ),
                               decoration: BoxDecoration(
-                                color: pColor.withValues(alpha: 0.15),
+                                color: bgColor.withValues(alpha: isDark ? 0.2 : 0.12),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 label,
                                 style: TextStyle(
                                   fontSize: 11,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
                                   color: isDark
-                                      ? pColor.withValues(alpha: 0.8)
-                                      : pColor.withValues(alpha: 0.7),
+                                      ? Colors.white.withValues(alpha: 0.9)
+                                      : const Color(0xFF1A1A2E),
                                 ),
                               ),
                             );
@@ -709,17 +710,17 @@ class _PartnerManagePageState extends ConsumerState<PartnerManagePage> {
                             ),
                             decoration: BoxDecoration(
                               color: (isDark ? Colors.white : Colors.black)
-                                  .withValues(alpha: 0.05),
+                                  .withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               _genderLabels[companion.gender] ?? '未知',
                               style: TextStyle(
                                 fontSize: 11,
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w600,
                                 color: isDark
-                                    ? Colors.white.withValues(alpha: 0.4)
-                                    : Colors.black.withValues(alpha: 0.35),
+                                    ? Colors.white.withValues(alpha: 0.7)
+                                    : Colors.black.withValues(alpha: 0.6),
                               ),
                             ),
                           ),

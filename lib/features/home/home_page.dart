@@ -24,6 +24,7 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> with RouteAware {
   Companion? _currentCompanion;
+  List<Companion> _companions = [];
   List<Conversation> _conversations = [];
   List<Memory> _memories = [];
   bool _isLoading = true;
@@ -92,6 +93,7 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
       if (mounted) {
         setState(() {
           _currentCompanion = companion;
+          _companions = companions;
           _conversations = conversations;
           _memories = memories;
         });
@@ -909,6 +911,11 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    // 根据对话的 companionId 找到对应的伴侣
+    final companion = _conversations.isNotEmpty
+        ? _findCompanionById(conv.companionId)
+        : _currentCompanion;
+
     return GestureDetector(
       onTap: () =>
           context.push('/conversations/chat/${conv.id.toString()}'),
@@ -948,7 +955,7 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
                     children: [
                       Expanded(
                         child: Text(
-                          _currentCompanion?.name ?? '对话',
+                          companion?.name ?? '对话',
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
@@ -1001,6 +1008,16 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
         ),
       ),
     );
+  }
+
+  /// 根据伴侣ID查找伴侣
+  Companion? _findCompanionById(int? companionId) {
+    if (companionId == null) return _currentCompanion;
+    try {
+      return _companions.firstWhere((c) => c.id == companionId);
+    } catch (_) {
+      return _currentCompanion;
+    }
   }
 
   // ==================== 快捷操作 ====================

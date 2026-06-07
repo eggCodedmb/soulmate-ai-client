@@ -86,13 +86,6 @@ class MembershipCard extends StatelessWidget {
                 : [AppColors.brandPink, AppColors.brandLavender],
           ),
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.brandPink.withValues(alpha: 0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
         child: Row(
           children: [
@@ -181,13 +174,6 @@ class MembershipCard extends StatelessWidget {
                   width: 1.5,
                 )
               : null,
-          boxShadow: [
-            BoxShadow(
-              color: config.accentColor.withValues(alpha: 0.25 + tier.index * 0.05),
-              blurRadius: 12.0 + tier.index * 4,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
         child: Row(
           children: [
@@ -197,15 +183,6 @@ class MembershipCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(14),
-                boxShadow: tier.index >= 2
-                    ? [
-                        BoxShadow(
-                          color: config.accentColor.withValues(alpha: 0.3),
-                          blurRadius: 12,
-                          spreadRadius: 1,
-                        ),
-                      ]
-                    : null,
               ),
               child: Icon(config.icon, color: Colors.white, size: 28),
             ),
