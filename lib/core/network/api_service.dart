@@ -5,6 +5,7 @@ import '../../shared/models/companion.dart';
 import '../../shared/models/conversation.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/memory.dart';
+import '../../shared/models/page_result.dart';
 import '../../shared/models/subscription.dart';
 import 'api_client.dart';
 
@@ -164,8 +165,8 @@ class ApiService {
         .toList();
   }
 
-  /// 获取对话消息
-  Future<List<Message>> getMessages(
+  /// 获取对话消息（分页）
+  Future<PageResult<Message>> getMessages(
     int conversationId, {
     int page = 1,
     int size = 20,
@@ -174,10 +175,8 @@ class ApiService {
       '/api/conversation/$conversationId/messages',
       queryParameters: {'page': page, 'size': size},
     );
-    final data = _unwrap(response) as List<dynamic>;
-    return data
-        .map((e) => Message.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final data = _unwrap(response) as Map<String, dynamic>;
+    return PageResult.fromJson(data, Message.fromJson);
   }
 
   /// 发送消息（非流式）

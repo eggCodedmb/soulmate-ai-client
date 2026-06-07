@@ -30,6 +30,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _isTyping = false;
   bool _isLoading = true;
   bool _hasText = false;
+  int _currentPage = 1;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
   int? _companionId;
   String? _companionName;
   String? _companionAvatarUrl;
@@ -85,15 +88,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _companionAvatarUrl = companion.avatarUrl;
       _companionPersonalities = companion.personalityKeys;
 
-      final messages = await apiService.getMessages(
+      final pageResult = await apiService.getMessages(
         _conversationId,
-        size: 50,
+        page: 1,
+        size: 20,
       );
 
       if (mounted) {
         setState(() {
           _messages.clear();
-          _messages.addAll(messages);
+          _messages.addAll(pageResult.records);
+          _currentPage = 1;
+          _hasMore = pageResult.hasMore;
           _isLoading = false;
         });
       }
@@ -158,18 +164,49 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _refreshMessages() async {
     try {
       final apiService = ref.read(apiServiceProvider);
-      final messages = await apiService.getMessages(
+      final pageResult = await apiService.getMessages(
         _conversationId,
-        size: 50,
+        page: 1,
+        size: 20,
       );
       if (mounted) {
         setState(() {
           _messages.clear();
-          _messages.addAll(messages);
+          _messages.addAll(pageResult.records);
+          _currentPage = 1;
+          _hasMore = pageResult.hasMore;
         });
       }
     } catch (e) {
       debugPrint('刷新消息失败: $e');
+    }
+  }
+
+  Future<void> _loadMoreMessages() async {
+    if (_isLoadingMore || !_hasMore) return;
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      final pageResult = await apiService.getMessages(
+        _conversationId,
+        page: _currentPage + 1,
+        size: 20,
+      );
+      if (mounted) {
+        setState(() {
+          _messages.addAll(pageResult.records);
+          _currentPage++;
+          _hasMore = pageResult.hasMore;
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('加载更多消息失败: $e');
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
 
@@ -441,26 +478,66 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   // ==================== 消息列表 ====================
 
   Widget _buildMessageList(BuildContext context, bool isDark) {
-    return ListView.builder(
-      controller: _scrollController,
-      reverse: true,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      itemCount: _messages.length,
-      itemBuilder: (context, index) {
-        final message = _messages[index];
-        final showDateSeparator = _shouldShowDateSeparator(index);
-
-        return _MessageBubbleWrapper(
-          isNew: message.id == 0,
-          child: Column(
-            children: [
-              if (showDateSeparator)
-                _buildDateSeparator(message.createTime, isDark),
-              _buildMessageBubble(context, message, isDark),
-            ],
-          ),
-        );
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollUpdateNotification &&
+            notification.metrics.pixels >= notification.metrics.maxScrollExtent - 200) {
+          _loadMoreMessages();
+        }
+        return false;
       },
+      child: ListView.builder(
+        controller: _scrollController,
+        reverse: true,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        itemCount: _messages.length + (_hasMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          // 加载更多指示器（在列表顶部，即 reversed 列表的末尾）
+          if (index == _messages.length) {
+            return _buildLoadMoreIndicator(isDark);
+          }
+
+          final message = _messages[index];
+          final showDateSeparator = _shouldShowDateSeparator(index);
+
+          return _MessageBubbleWrapper(
+            isNew: message.id == 0,
+            child: Column(
+              children: [
+                if (showDateSeparator)
+                  _buildDateSeparator(message.createTime, isDark),
+                _buildMessageBubble(context, message, isDark),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLoadMoreIndicator(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: _isLoadingMore
+            ? SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.brandPink.withValues(alpha: 0.6),
+                ),
+              )
+            : Text(
+                '上拉加载更多',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.3)
+                      : Colors.black.withValues(alpha: 0.3),
+                ),
+              ),
+      ),
     );
   }
 
