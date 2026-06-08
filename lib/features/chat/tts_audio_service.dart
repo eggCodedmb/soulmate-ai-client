@@ -29,12 +29,16 @@ class TtsAudioService {
   TtsAudioService(this._api) {
     _player.playerStateStream.listen((state) {
       final wasPlaying = _isPlaying;
-      _isPlaying = state.playing;
+      final completed = state.processingState == ProcessingState.completed;
+      // 在 just_audio 中，当自然播放完成时，state.playing 依然可能为 true。
+      // 因此我们需要结合 completed 状态来判断真实的播放状态。
+      _isPlaying = state.playing && !completed;
+      
       if (wasPlaying && !_isPlaying) {
         // 播放结束或暂停 —— 先回调通知（此时 playingMessageKey 仍可用）
         _onStateChanged?.call();
         // 回调完成后再清除 key
-        if (state.processingState == ProcessingState.completed) {
+        if (completed) {
           _playingMessageKey = null;
         }
       } else {
@@ -121,6 +125,8 @@ class TtsAudioService {
   Future<void> play(String filePath, String messageKey) async {
     try {
       await _player.setFilePath(filePath);
+      // 强制将播放位置重置到起点，以解决在 just_audio 中重复播放相同文件失效的问题
+      await _player.seek(Duration.zero);
       _playingMessageKey = messageKey;
       _isPlaying = true;
       _onStateChanged?.call();
