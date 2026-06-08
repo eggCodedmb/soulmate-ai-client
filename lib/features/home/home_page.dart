@@ -726,13 +726,13 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
         ? DateTime.now().difference(companion!.createTime!).inDays + 1
         : 1;
 
-    // 获取当前伴侣对话的AI回复数
-    var replyCount = 0;
+    // 获取当前伴侣对话的总消息数
+    var totalMessages = 0;
     if (companion != null) {
       final conv = _conversations
           .where((c) => c.companionId == companion.id)
           .firstOrNull;
-      replyCount = conv?.companionReplyCount ?? 0;
+      totalMessages = conv?.messageCount ?? 0;
     }
 
     return SliverToBoxAdapter(
@@ -766,7 +766,7 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
               _buildStatItem(
                 context,
                 icon: Icons.chat_bubble_rounded,
-                value: '$replyCount',
+                value: '$totalMessages',
                 label: '次对话',
                 color: AppColors.brandWarmPeach,
               ),
