@@ -191,6 +191,106 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
     );
   }
 
+  Widget _buildCompanionSelector(BuildContext context) {
+    if (_companions.length <= 1) return const SizedBox.shrink();
+
+    return Container(
+      height: 48,
+      margin: const EdgeInsets.only(top: 8, bottom: 8),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _companions.length,
+        itemBuilder: (context, index) {
+          final companion = _companions[index];
+          final isSelected = companion.id == _currentCompanion?.id;
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: GestureDetector(
+              onTap: () async {
+                if (isSelected) return;
+                await HapticFeedback.lightImpact();
+
+                var memories = <Memory>[];
+                try {
+                  final apiService = ref.read(apiServiceProvider);
+                  memories =
+                      await apiService.getMemoryList(companionId: companion.id);
+                } catch (_) {
+                  // 容错处理
+                }
+
+                if (mounted) {
+                  setState(() {
+                    _currentCompanion = companion;
+                    _memories = memories;
+                  });
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isSelected ? AppColors.brandPink : Colors.transparent,
+                    width: 2,
+                  ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: AppColors.brandPink.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            spreadRadius: 1,
+                          )
+                        ]
+                      : null,
+                ),
+                child: ClipOval(
+                  child: Opacity(
+                    opacity: isSelected ? 1.0 : 0.65,
+                    child: companion.avatarUrl != null &&
+                            companion.avatarUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: getFullUrl(ref, companion.avatarUrl!),
+                            width: 36,
+                            height: 36,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) =>
+                                _buildPlaceholderAvatar(companion.name),
+                            errorWidget: (_, __, ___) =>
+                                _buildPlaceholderAvatar(companion.name),
+                          )
+                        : _buildPlaceholderAvatar(companion.name),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPlaceholderAvatar(String name) {
+    return Container(
+      width: 36,
+      height: 36,
+      color: AppColors.brandPink.withValues(alpha: 0.15),
+      child: Center(
+        child: Text(
+          name.isNotEmpty ? name[0] : '?',
+          style: const TextStyle(
+            color: AppColors.brandPink,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
   // ==================== 头部区域 ====================
 
   Widget _buildHeroHeader(BuildContext context) {
@@ -269,6 +369,9 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
                         ),
                       ],
                     ),
+
+                    // 伴侣选择栏
+                    _buildCompanionSelector(context),
 
                     // 伴侣头像区域
                     Expanded(
