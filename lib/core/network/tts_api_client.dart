@@ -212,7 +212,7 @@ class TtsApiClient {
         }
       ],
       'audio': {
-        'format': 'mp3',
+        'format': 'wav',
         'voice': request.profileId,
       },
       'stream': false,

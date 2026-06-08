@@ -73,7 +73,8 @@ class TtsAudioService {
   Future<String?> getCachedAudioPath(String text, TtsConfig config) async {
     final dir = await _getCacheDir();
     final key = _cacheKey(text, config);
-    final file = File('${dir.path}/$key.mp3');
+    final isMimo = LocalStorage.ttsProviderType == 'mimo';
+    final file = File('${dir.path}/$key.${isMimo ? 'wav' : 'mp3'}');
     if (await file.exists()) {
       return file.path;
     }
@@ -94,7 +95,8 @@ class TtsAudioService {
     final request = buildTtsRequest(config, text);
     final dir = await _getCacheDir();
     final key = _cacheKey(text, config);
-    final file = File('${dir.path}/$key.mp3');
+    final isMimo = LocalStorage.ttsProviderType == 'mimo';
+    final file = File('${dir.path}/$key.${isMimo ? 'wav' : 'mp3'}');
     final sink = file.openWrite();
 
     try {
