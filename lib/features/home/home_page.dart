@@ -308,7 +308,7 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
     final bgColor = isDark ? personalityColor.dark : personalityColor.light;
 
     return SliverAppBar(
-      expandedHeight: 340,
+      expandedHeight: 385,
       pinned: true,
       stretch: true,
       backgroundColor: Colors.transparent,
@@ -468,8 +468,8 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
         return Transform.scale(
           scale: scale,
           child: Container(
-            width: 150,
-            height: 150,
+            width: 130,
+            height: 130,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               boxShadow: [
@@ -485,8 +485,8 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
         );
       },
       child: Container(
-        width: 130,
-        height: 130,
+        width: 110,
+        height: 110,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: colorScheme.surfaceContainerHighest,
@@ -501,8 +501,8 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
                   companion!.avatarUrl!.isNotEmpty
               ? CachedNetworkImage(
                   imageUrl: getFullUrl(ref, companion.avatarUrl!),
-                  width: 130,
-                  height: 130,
+                  width: 110,
+                  height: 110,
                   fit: BoxFit.cover,
                   placeholder: (_, __) => _buildAvatarPlaceholder(
                     context,
