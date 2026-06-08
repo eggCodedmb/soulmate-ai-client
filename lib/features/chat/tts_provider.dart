@@ -111,7 +111,8 @@ class TtsNotifier extends StateNotifier<TtsState> {
 
     final playingKey = svc.playingMessageKey;
     if (playingKey != null && svc.isPlaying) {
-      _updateMessageState(playingKey, const MessageTtsEntry().copyWith(
+      final entry = state.getMessageState(playingKey);
+      _updateMessageState(playingKey, entry.copyWith(
         status: MessageTtsStatus.playing,
       ));
     } else if (playingKey != null && !svc.isPlaying) {
