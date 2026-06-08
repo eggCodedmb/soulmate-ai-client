@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/di/providers.dart';
+import '../../core/network/tts_api_client.dart';
 import '../../core/storage/local_storage.dart';
 import '../../core/storage/secure_storage.dart';
 
@@ -135,6 +137,46 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           subtitle: LocalStorage.modelBaseUrl ?? '未配置',
                           isDark: isDark,
                           onTap: () => _showModelUrlDialog(context, isDark),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    // TTS 语音配置
+                    _buildSection(
+                      context,
+                      title: '语音合成 (TTS)',
+                      icon: Icons.record_voice_over_outlined,
+                      iconColor: const Color(0xFF7C4DFF),
+                      isDark: isDark,
+                      children: [
+                        _buildMenuItem(
+                          context,
+                          icon: Icons.dns_outlined,
+                          iconColor: const Color(0xFF7C4DFF),
+                          title: 'TTS 服务器地址',
+                          subtitle: LocalStorage.ttsBaseUrl ?? '未配置',
+                          isDark: isDark,
+                          onTap: () => _showTtsUrlDialog(context, isDark),
+                        ),
+                        _buildMenuDivider(context, isDark),
+                        _buildMenuItem(
+                          context,
+                          icon: Icons.tune_rounded,
+                          iconColor: const Color(0xFF00BCD4),
+                          title: '默认声音配置',
+                          subtitle: _globalTtsSubtitle(),
+                          isDark: isDark,
+                          onTap: () => _showGlobalTtsConfigDialog(context, isDark),
+                        ),
+                        _buildMenuDivider(context, isDark),
+                        _buildMenuItem(
+                          context,
+                          icon: Icons.volume_up_outlined,
+                          iconColor: const Color(0xFFE91E63),
+                          title: '声音档案管理',
+                          subtitle: _ttsProfilesCountText(),
+                          isDark: isDark,
+                          onTap: () => _showTtsProfilesDialog(context, isDark),
                         ),
                       ],
                     ),
@@ -866,6 +908,788 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 ],
               ),
               const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==================== TTS 语音合成 ====================
+
+  String _ttsProfilesCountText() {
+    final url = LocalStorage.ttsBaseUrl;
+    if (url == null || url.isEmpty) return '请先配置 TTS 服务器';
+    return '点击查看可用声音';
+  }
+
+  String _globalTtsSubtitle() {
+    final profileName = LocalStorage.ttsGlobalProfileName;
+    if (profileName == null || profileName.isEmpty) return '未配置，使用各角色独立设置';
+    final lang = LocalStorage.ttsGlobalLanguage;
+    final langLabel = lang == 'zh' ? '中文' : lang == 'en' ? 'English' : lang;
+    return '$profileName · $langLabel';
+  }
+
+  /// 全局 TTS 默认声音配置弹窗
+  void _showGlobalTtsConfigDialog(BuildContext context, bool isDark) {
+    final ttsApi = ref.read(ttsApiProvider);
+    if (!ttsApi.isConfigured) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先配置 TTS 服务器地址')),
+      );
+      return;
+    }
+
+    // 当前选中值
+    String? selectedProfileId = LocalStorage.ttsGlobalProfileId;
+    String? selectedProfileName = LocalStorage.ttsGlobalProfileName;
+    String selectedLanguage = LocalStorage.ttsGlobalLanguage;
+    String selectedEngine = LocalStorage.ttsGlobalEngine;
+
+    const languages = [
+      {'value': 'zh', 'label': '中文'},
+      {'value': 'en', 'label': 'English'},
+      {'value': 'ja', 'label': '日本語'},
+      {'value': 'ko', 'label': '한국어'},
+    ];
+    const engines = [
+      {'value': 'qwen', 'label': 'Qwen'},
+      {'value': 'vits', 'label': 'VITS'},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          maxChildSize: 0.85,
+          minChildSize: 0.4,
+          expand: false,
+          builder: (context, scrollController) => Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.3) : Colors.grey.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '默认声音配置',
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                    fontSize: 20, fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '未单独配置声音的角色将使用此默认设置',
+                  style: TextStyle(
+                    color: isDark ? Colors.white.withOpacity(0.5) : Colors.grey[600],
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Expanded(
+                  child: ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    children: [
+                      // 声音档案选择
+                      Text(
+                        '选择声音',
+                        style: TextStyle(
+                          color: isDark ? Colors.white.withOpacity(0.8) : Colors.black87,
+                          fontSize: 14, fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FutureBuilder(
+                        future: ttsApi.getProfiles(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                            );
+                          }
+                          if (snapshot.hasError) {
+                            return Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '加载失败: ${snapshot.error}',
+                                style: TextStyle(color: Colors.red.withOpacity(0.8), fontSize: 13),
+                              ),
+                            );
+                          }
+                          final profiles = snapshot.data ?? [];
+                          if (profiles.isEmpty) {
+                            return Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: (isDark ? Colors.white : Colors.grey).withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '暂无可用声音档案',
+                                style: TextStyle(
+                                  color: isDark ? Colors.white.withOpacity(0.5) : Colors.grey[500],
+                                ),
+                              ),
+                            );
+                          }
+                          return Column(
+                            children: profiles.map((profile) {
+                              final isSelected = selectedProfileId == profile.id;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: GestureDetector(
+                                  onTap: () {
+                                    HapticFeedback.lightImpact();
+                                    setSheetState(() {
+                                      selectedProfileId = profile.id;
+                                      selectedProfileName = profile.name;
+                                      selectedLanguage = profile.language;
+                                      selectedEngine = profile.defaultEngine;
+                                    });
+                                  },
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? const Color(0xFF7C4DFF).withOpacity(0.12)
+                                          : (isDark ? Colors.white.withOpacity(0.05) : Colors.grey.withOpacity(0.05)),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? const Color(0xFF7C4DFF)
+                                            : (isDark ? Colors.white.withOpacity(0.1) : Colors.grey.withOpacity(0.2)),
+                                        width: isSelected ? 1.5 : 1,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 40, height: 40,
+                                          decoration: BoxDecoration(
+                                            color: isSelected
+                                                ? const Color(0xFF7C4DFF).withOpacity(0.15)
+                                                : (isDark ? Colors.white.withOpacity(0.08) : Colors.grey.withOpacity(0.1)),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            Icons.record_voice_over_outlined, size: 20,
+                                            color: isSelected ? const Color(0xFF7C4DFF) : (isDark ? Colors.white54 : Colors.grey[600]),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                profile.name,
+                                                style: TextStyle(
+                                                  color: isSelected
+                                                      ? const Color(0xFF7C4DFF)
+                                                      : (isDark ? Colors.white : Colors.black),
+                                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Row(
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFF7C4DFF).withOpacity(0.1),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: Text(
+                                                      profile.voiceTypeLabel,
+                                                      style: TextStyle(fontSize: 10, color: const Color(0xFF7C4DFF).withOpacity(0.7)),
+                                                    ),
+                                                  ),
+                                                  if (profile.personality != null && profile.personality!.isNotEmpty) ...[
+                                                    const SizedBox(width: 6),
+                                                    Flexible(
+                                                      child: Text(
+                                                        profile.personality!,
+                                                        style: TextStyle(fontSize: 11, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
+                                                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (isSelected)
+                                          const Icon(Icons.check_circle, color: Color(0xFF7C4DFF), size: 22),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 20),
+
+                      // 语言选择
+                      Text(
+                        '默认语言',
+                        style: TextStyle(
+                          color: isDark ? Colors.white.withOpacity(0.8) : Colors.black87,
+                          fontSize: 14, fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8, runSpacing: 8,
+                        children: languages.map((lang) {
+                          final isSelected = selectedLanguage == lang['value'];
+                          return ChoiceChip(
+                            label: Text(lang['label']!),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              if (selected) {
+                                HapticFeedback.lightImpact();
+                                setSheetState(() => selectedLanguage = lang['value']!);
+                              }
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // 引擎选择
+                      Text(
+                        '合成引擎',
+                        style: TextStyle(
+                          color: isDark ? Colors.white.withOpacity(0.8) : Colors.black87,
+                          fontSize: 14, fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8, runSpacing: 8,
+                        children: engines.map((eng) {
+                          final isSelected = selectedEngine == eng['value'];
+                          return ChoiceChip(
+                            label: Text(eng['label']!),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              if (selected) {
+                                HapticFeedback.lightImpact();
+                                setSheetState(() => selectedEngine = eng['value']!);
+                              }
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // 保存按钮
+                      SizedBox(
+                        width: double.infinity, height: 52,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            LocalStorage.setTtsGlobalProfileId(selectedProfileId);
+                            LocalStorage.setTtsGlobalProfileName(selectedProfileName);
+                            LocalStorage.setTtsGlobalLanguage(selectedLanguage);
+                            LocalStorage.setTtsGlobalEngine(selectedEngine);
+                            Navigator.pop(context);
+                            setState(() {});
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('默认声音配置已保存')),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF7C4DFF),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                          ),
+                          child: const Text('保存配置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// TTS 服务器地址弹窗
+  void _showTtsUrlDialog(BuildContext context, bool isDark) {
+    final controller = TextEditingController(text: LocalStorage.ttsBaseUrl ?? '');
+    bool isTesting = false;
+    bool? testResult;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 拖拽指示器
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'TTS 服务器地址',
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '配置独立的语音合成服务地址',
+                  style: TextStyle(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.5)
+                        : Colors.grey[600],
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // 输入框
+                Container(
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.08)
+                        : Colors.grey.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.15)
+                          : Colors.grey.withOpacity(0.2),
+                    ),
+                  ),
+                  child: TextField(
+                    controller: controller,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'http://localhost:8000',
+                      hintStyle: TextStyle(
+                        color: isDark
+                            ? Colors.white.withOpacity(0.3)
+                            : Colors.grey[400],
+                      ),
+                      labelText: 'TTS 服务地址',
+                      labelStyle: TextStyle(
+                        color: isDark
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey[600],
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.all(16),
+                      prefixIcon: Icon(
+                        Icons.dns_outlined,
+                        color: isDark
+                            ? Colors.white.withOpacity(0.5)
+                            : Colors.grey[500],
+                      ),
+                    ),
+                    keyboardType: TextInputType.url,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // 测试连接结果
+                if (testResult != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: testResult!
+                          ? Colors.green.withOpacity(isDark ? 0.15 : 0.1)
+                          : Colors.red.withOpacity(isDark ? 0.15 : 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          testResult! ? Icons.check_circle_outline : Icons.error_outline,
+                          color: testResult!
+                              ? Colors.green.withOpacity(0.8)
+                              : Colors.red.withOpacity(0.8),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          testResult! ? '连接成功' : '连接失败，请检查地址',
+                          style: TextStyle(
+                            color: testResult!
+                                ? Colors.green.withOpacity(0.8)
+                                : Colors.red.withOpacity(0.8),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 24),
+                // 按钮
+                Row(
+                  children: [
+                    // 测试连接按钮
+                    SizedBox(
+                      height: 56,
+                      child: TextButton(
+                        onPressed: isTesting
+                            ? null
+                            : () async {
+                                final url = controller.text.trim();
+                                if (url.isEmpty) return;
+                                setSheetState(() {
+                                  isTesting = true;
+                                  testResult = null;
+                                });
+                                // 临时保存以测试连接
+                                final oldUrl = LocalStorage.ttsBaseUrl;
+                                await LocalStorage.setTtsBaseUrl(url);
+                                try {
+                                  final ttsApi = ref.read(ttsApiProvider);
+                                  final ok = await ttsApi.testConnection();
+                                  setSheetState(() {
+                                    testResult = ok;
+                                    isTesting = false;
+                                  });
+                                } catch (_) {
+                                  setSheetState(() {
+                                    testResult = false;
+                                    isTesting = false;
+                                  });
+                                }
+                                // 恢复旧值，等用户点保存
+                                await LocalStorage.setTtsBaseUrl(oldUrl);
+                              },
+                        style: TextButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.2)
+                                  : Colors.grey.withOpacity(0.3),
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                        ),
+                        child: isTesting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Text(
+                                '测试连接',
+                                style: TextStyle(
+                                  color: isDark
+                                      ? Colors.white.withOpacity(0.7)
+                                      : Colors.grey[700],
+                                  fontSize: 16,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SizedBox(
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            LocalStorage.setTtsBaseUrl(controller.text.trim());
+                            Navigator.pop(context);
+                            setState(() {});
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.brandPink,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            '保存',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 声音档案列表弹窗
+  void _showTtsProfilesDialog(BuildContext context, bool isDark) {
+    final ttsApi = ref.read(ttsApiProvider);
+
+    if (!ttsApi.isConfigured) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先配置 TTS 服务器地址')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.85,
+        minChildSize: 0.3,
+        expand: false,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            children: [
+              // 拖拽指示器
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '可用声音档案',
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // 声音列表
+              Expanded(
+                child: FutureBuilder(
+                  future: ttsApi.getProfiles(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              color: Colors.red.withOpacity(0.6),
+                              size: 48,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '加载失败',
+                              style: TextStyle(
+                                color: isDark
+                                    ? Colors.white.withOpacity(0.7)
+                                    : Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              snapshot.error.toString(),
+                              style: TextStyle(
+                                color: isDark
+                                    ? Colors.white.withOpacity(0.4)
+                                    : Colors.grey[500],
+                                fontSize: 12,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final profiles = snapshot.data ?? [];
+                    if (profiles.isEmpty) {
+                      return Center(
+                        child: Text(
+                          '暂无可用声音',
+                          style: TextStyle(
+                            color: isDark
+                                ? Colors.white.withOpacity(0.5)
+                                : Colors.grey[500],
+                          ),
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      controller: scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      itemCount: profiles.length,
+                      itemBuilder: (context, index) {
+                        final profile = profiles[index];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.white.withOpacity(0.06)
+                                : Colors.grey.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.1)
+                                  : Colors.grey.withOpacity(0.15),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: AppColors.brandPink.withOpacity(isDark ? 0.15 : 0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.record_voice_over_outlined,
+                                  color: AppColors.brandPink,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      profile.name,
+                                      style: TextStyle(
+                                        color: isDark ? Colors.white : Colors.black,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF7C4DFF).withOpacity(0.15),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            profile.voiceTypeLabel,
+                                            style: TextStyle(
+                                              color: const Color(0xFF7C4DFF).withOpacity(0.8),
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          profile.language.toUpperCase(),
+                                          style: TextStyle(
+                                            color: isDark
+                                                ? Colors.white.withOpacity(0.4)
+                                                : Colors.grey[500],
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (profile.personality != null &&
+                                        profile.personality!.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        profile.personality!,
+                                        style: TextStyle(
+                                          color: isDark
+                                              ? Colors.white.withOpacity(0.5)
+                                              : Colors.grey[600],
+                                          fontSize: 12,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         ),

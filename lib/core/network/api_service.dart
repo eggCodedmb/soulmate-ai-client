@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/models/user.dart';
 import '../../shared/models/companion.dart';
+import '../../shared/models/tts_config.dart';
 import '../../shared/models/conversation.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/memory.dart';
@@ -429,6 +430,7 @@ class CreateCompanionRequest {
   final List<String>? personalityKeys;
   final String? speakingStyle;
   final String? description;
+  final TtsConfig? ttsConfig;
 
   CreateCompanionRequest({
     required this.name,
@@ -437,6 +439,7 @@ class CreateCompanionRequest {
     this.personalityKeys,
     this.speakingStyle,
     this.description,
+    this.ttsConfig,
   });
 
   Map<String, dynamic> toJson() => {
@@ -446,6 +449,7 @@ class CreateCompanionRequest {
     if (personalityKeys != null) 'personalityKeys': personalityKeys,
     if (speakingStyle != null) 'speakingStyle': speakingStyle,
     if (description != null) 'description': description,
+    if (ttsConfig != null) 'ttsConfig': ttsConfig!.toJson(),
   };
 }
 

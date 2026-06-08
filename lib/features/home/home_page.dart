@@ -778,20 +778,16 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
 
     // 分类颜色
     final categoryColors = {
+      'personal_info': AppColors.brandLavender,
+      'shared_experience': AppColors.brandWarmPeach,
       'preference': AppColors.brandPink,
-      'personality': AppColors.brandLavender,
-      'experience': AppColors.brandWarmPeach,
-      'relationship': const Color(0xFF34C759),
       'habit': const Color(0xFFFF9500),
-      'other': const Color(0xFF5AC8FA),
     };
     final categoryIcons = {
+      'personal_info': Icons.info_outline_rounded,
+      'shared_experience': Icons.auto_stories_rounded,
       'preference': Icons.favorite_rounded,
-      'personality': Icons.psychology_rounded,
-      'experience': Icons.auto_stories_rounded,
-      'relationship': Icons.people_rounded,
       'habit': Icons.star_rounded,
-      'other': Icons.lightbulb_rounded,
     };
 
     final color = categoryColors[memory.category] ?? AppColors.brandPink;

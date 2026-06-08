@@ -24,40 +24,28 @@ class MemoryCategoryConfig {
 
 const List<MemoryCategoryConfig> memoryCategories = [
   MemoryCategoryConfig(
-    key: 'preference',
-    label: '个人喜好',
-    icon: Icons.favorite_rounded,
-    color: AppColors.brandPink,
-  ),
-  MemoryCategoryConfig(
-    key: 'personality',
-    label: '性格特质',
-    icon: Icons.psychology_rounded,
+    key: 'personal_info',
+    label: '个人信息',
+    icon: Icons.info_outline_rounded,
     color: AppColors.brandLavender,
   ),
   MemoryCategoryConfig(
-    key: 'experience',
-    label: '生活经历',
+    key: 'shared_experience',
+    label: '共同经历',
     icon: Icons.auto_stories_rounded,
     color: AppColors.brandWarmPeach,
   ),
   MemoryCategoryConfig(
-    key: 'relationship',
-    label: '情感关系',
-    icon: Icons.people_rounded,
-    color: Color(0xFF34C759),
+    key: 'preference',
+    label: '偏好习惯',
+    icon: Icons.favorite_rounded,
+    color: AppColors.brandPink,
   ),
   MemoryCategoryConfig(
     key: 'habit',
-    label: '习惯偏好',
+    label: '日常习惯',
     icon: Icons.star_rounded,
     color: Color(0xFFFF9500),
-  ),
-  MemoryCategoryConfig(
-    key: 'other',
-    label: '其他',
-    icon: Icons.lightbulb_rounded,
-    color: Color(0xFF5AC8FA),
   ),
 ];
 

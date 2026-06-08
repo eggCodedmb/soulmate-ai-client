@@ -171,17 +171,13 @@ class _AuthPageState extends ConsumerState<AuthPage> {
               children: [
                 const SizedBox(height: 48),
                 // Logo
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Icon(
-                    Icons.favorite_rounded,
-                    size: 40,
-                    color: Theme.of(context).colorScheme.primary,
+                Hero(
+                  tag: 'app_logo',
+                  child: Image.asset(
+                    'assets/logo.png',
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.contain,
                   ),
                 ),
                 const SizedBox(height: 24),

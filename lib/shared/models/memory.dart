@@ -40,9 +40,9 @@ class Memory {
 
   factory Memory.fromJson(Map<String, dynamic> json) {
     return Memory(
-      id: (json['id'] as num).toInt(),
-      userId: (json['userId'] as num).toInt(),
-      companionId: (json['companionId'] as num).toInt(),
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      userId: (json['userId'] as num?)?.toInt() ?? 0,
+      companionId: (json['companionId'] as num?)?.toInt() ?? 0,
       category: json['category'] as String? ?? '',
       title: json['title'] as String? ?? '',
       content: json['content'] as String? ?? '',

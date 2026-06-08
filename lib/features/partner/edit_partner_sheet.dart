@@ -6,7 +6,10 @@ import '../../core/constants/app_colors.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
 import '../../core/theme/app_shadows.dart';
+import '../../core/network/tts_api_client.dart';
+import '../../core/storage/local_storage.dart';
 import '../../shared/models/companion.dart';
+import '../../shared/models/tts_config.dart';
 import '../../shared/widgets/soul_toast.dart';
 
 /// 伴侣编辑/创建页面（全屏）
@@ -67,6 +70,13 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
   bool _isSaving = false;
   bool _isUploadingAvatar = false;
 
+  // TTS 相关状态
+  late bool _ttsEnabled;
+  late TtsConfig _ttsConfig;
+  List<VoiceProfile>? _voiceProfiles;
+  bool _isLoadingProfiles = false;
+  String? _ttsError;
+
   /// 是否为创建模式
   bool get _isCreateMode => widget.companion == null;
 
@@ -116,6 +126,34 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
     _selectedPersonalities = c != null ? List.from(c.personalityKeys) : [];
     _selectedSpeakingStyle = c?.speakingStyle ?? 'casual';
     _currentAvatarUrl = c?.avatarUrl;
+    _ttsEnabled = c?.ttsConfig?.enabled ?? false;
+    _ttsConfig = c?.ttsConfig ?? TtsConfig();
+
+    // 加载声音档案列表
+    _loadVoiceProfiles();
+  }
+
+  Future<void> _loadVoiceProfiles() async {
+    final ttsApi = ref.read(ttsApiProvider);
+    if (!ttsApi.isConfigured) return;
+
+    setState(() => _isLoadingProfiles = true);
+    try {
+      final profiles = await ttsApi.getProfiles();
+      if (mounted) {
+        setState(() {
+          _voiceProfiles = profiles;
+          _isLoadingProfiles = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingProfiles = false;
+          _ttsError = e.toString();
+        });
+      }
+    }
   }
 
   @override
@@ -135,12 +173,15 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
   bool get _hasChanges {
     if (_isCreateMode) return true;
     final c = widget.companion!;
+    final currentTtsEnabled = c.ttsConfig?.enabled ?? false;
     return _nameController.text.trim() != c.name ||
         _descriptionController.text.trim() != (c.description ?? '') ||
         _selectedGender != c.gender ||
         _selectedRelationship != c.relationshipType ||
         _selectedSpeakingStyle != c.speakingStyle ||
         _currentAvatarUrl != c.avatarUrl ||
+        _ttsEnabled != currentTtsEnabled ||
+        (_ttsEnabled && _ttsConfig.profileId != c.ttsConfig?.profileId) ||
         !_listEquals(_selectedPersonalities, c.personalityKeys);
   }
 
@@ -306,6 +347,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
 
       if (_isCreateMode) {
         // 创建模式
+        final ttsConfig = _ttsEnabled ? _ttsConfig.copyWith(enabled: true) : null;
         await apiService.createCompanion(
           CreateCompanionRequest(
             name: _nameController.text.trim(),
@@ -316,6 +358,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
             description: _descriptionController.text.trim().isEmpty
                 ? null
                 : _descriptionController.text.trim(),
+            ttsConfig: ttsConfig,
           ),
         );
 
@@ -335,6 +378,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
       } else {
         // 编辑模式
         final c = widget.companion!;
+        final ttsConfig = _ttsEnabled ? _ttsConfig.copyWith(enabled: true) : null;
         final updated = Companion(
           id: c.id,
           userId: c.userId,
@@ -350,6 +394,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
           themeColor: c.themeColor,
           status: c.status,
           companionOrder: c.companionOrder,
+          ttsConfig: ttsConfig,
           createTime: c.createTime,
           updateTime: c.updateTime,
         );
@@ -432,6 +477,27 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
                     title: '描述 / 人设',
                     children: [
                       _buildDescriptionField(scheme),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 声音设置卡片
+                  _buildSectionCard(
+                    context,
+                    icon: Icons.record_voice_over_outlined,
+                    title: '声音设置',
+                    children: [
+                      _buildTtsToggle(scheme, isLight),
+                      if (_ttsEnabled) ...[
+                        const SizedBox(height: 20),
+                        _buildVoiceProfilePicker(scheme, isLight),
+                        if (_ttsConfig.profileId != null) ...[
+                          const SizedBox(height: 20),
+                          _buildTtsLanguageSelector(scheme),
+                          const SizedBox(height: 20),
+                          _buildTtsEngineSelector(scheme),
+                        ],
+                      ],
                     ],
                   ),
                   const SizedBox(height: 32),
@@ -989,6 +1055,320 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
             hintText: '例如：一位来自古代的温柔诗人，喜欢在月下吟诵...',
             alignLabelWithHint: true,
           ),
+        ),
+      ],
+    );
+  }
+
+  // ==================== 声音设置 ====================
+
+  Widget _buildTtsToggle(ColorScheme scheme, bool isLight) {
+    final hasGlobalDefault = LocalStorage.ttsGlobalProfileId != null;
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '语音合成',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _ttsEnabled
+                    ? 'AI回复将自动生成语音'
+                    : (hasGlobalDefault
+                        ? '关闭则使用全局默认声音'
+                        : '开启后可为伴侣设置专属声音'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant.withOpacity(0.6),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Switch(
+          value: _ttsEnabled,
+          onChanged: (value) {
+            HapticFeedback.lightImpact();
+            setState(() {
+              _ttsEnabled = value;
+              if (!value) {
+                _ttsConfig = _ttsConfig.copyWith(enabled: false);
+              }
+            });
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVoiceProfilePicker(ColorScheme scheme, bool isLight) {
+    final ttsApi = ref.read(ttsApiProvider);
+
+    if (!ttsApi.isConfigured) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, size: 18, color: scheme.error),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '请先在设置中配置 TTS 服务器地址',
+                style: TextStyle(
+                  color: scheme.error,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_isLoadingProfiles) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    if (_voiceProfiles == null || _voiceProfiles!.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.voice_over_off_outlined, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Text(
+              _ttsError ?? '暂无可用声音档案',
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '选择声音',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...(_voiceProfiles!.map((profile) {
+          final isSelected = _ttsConfig.profileId == profile.id;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                setState(() {
+                  _ttsConfig = _ttsConfig.copyWith(
+                    profileId: profile.id,
+                    profileName: profile.name,
+                    engine: profile.defaultEngine,
+                    language: profile.language,
+                  );
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? scheme.primary.withOpacity(0.12)
+                      : scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isSelected
+                        ? scheme.primary
+                        : scheme.outline.withOpacity(0.15),
+                    width: isSelected ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? scheme.primary.withOpacity(0.15)
+                            : scheme.surfaceContainerHighest,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.record_voice_over_outlined,
+                        size: 20,
+                        color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            profile.name,
+                            style: TextStyle(
+                              color: isSelected ? scheme.primary : scheme.onSurface,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: scheme.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  profile.voiceTypeLabel,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: scheme.primary.withOpacity(0.7),
+                                  ),
+                                ),
+                              ),
+                              if (profile.personality != null &&
+                                  profile.personality!.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    profile.personality!,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: scheme.onSurfaceVariant.withOpacity(0.6),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isSelected)
+                      Icon(Icons.check_circle, color: scheme.primary, size: 22),
+                  ],
+                ),
+              ),
+            ),
+          );
+        })),
+      ],
+    );
+  }
+
+  Widget _buildTtsLanguageSelector(ColorScheme scheme) {
+    const languages = [
+      {'value': 'zh', 'label': '中文'},
+      {'value': 'en', 'label': 'English'},
+      {'value': 'ja', 'label': '日本語'},
+      {'value': 'ko', 'label': '한국어'},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '语音语言',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: languages.map((lang) {
+            final isSelected = _ttsConfig.language == lang['value'];
+            return ChoiceChip(
+              label: Text(lang['label']!),
+              selected: isSelected,
+              onSelected: (selected) {
+                if (selected) {
+                  HapticFeedback.lightImpact();
+                  setState(() {
+                    _ttsConfig = _ttsConfig.copyWith(language: lang['value']);
+                  });
+                }
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTtsEngineSelector(ColorScheme scheme) {
+    const engines = [
+      {'value': 'qwen', 'label': 'Qwen'},
+      {'value': 'vits', 'label': 'VITS'},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '合成引擎',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: engines.map((eng) {
+            final isSelected = (_ttsConfig.engine ?? 'qwen') == eng['value'];
+            return ChoiceChip(
+              label: Text(eng['label']!),
+              selected: isSelected,
+              onSelected: (selected) {
+                if (selected) {
+                  HapticFeedback.lightImpact();
+                  setState(() {
+                    _ttsConfig = _ttsConfig.copyWith(engine: eng['value']);
+                  });
+                }
+              },
+            );
+          }).toList(),
         ),
       ],
     );

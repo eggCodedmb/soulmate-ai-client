@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/network/api_service.dart';
+import '../../core/network/api_client.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/memory.dart';
 import '../../shared/models/companion.dart';
@@ -434,7 +435,9 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
                 context,
                 label: companion.name,
                 isSelected: _selectedCompanionId == companion.id,
-                avatarUrl: companion.avatarUrl,
+                avatarUrl: companion.avatarUrl != null && companion.avatarUrl!.isNotEmpty
+                    ? getFullUrl(ref, companion.avatarUrl!)
+                    : null,
                 onTap: () =>
                     setState(() => _selectedCompanionId = companion.id),
               );

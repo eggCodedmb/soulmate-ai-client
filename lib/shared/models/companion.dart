@@ -1,3 +1,5 @@
+import 'tts_config.dart';
+
 /// AI伴侣
 class Companion {
   final int id;
@@ -12,6 +14,7 @@ class Companion {
   final int status;
   final int companionOrder;
   final List<String> personalityKeys;
+  final TtsConfig? ttsConfig;
   final DateTime? createTime;
   final DateTime? updateTime;
 
@@ -28,6 +31,7 @@ class Companion {
     this.status = 1,
     this.companionOrder = 0,
     this.personalityKeys = const [],
+    this.ttsConfig,
     this.createTime,
     this.updateTime,
   });
@@ -49,6 +53,9 @@ class Companion {
               ?.map((e) => e.toString())
               .toList() ??
           [],
+      ttsConfig: json['ttsConfig'] != null
+          ? TtsConfig.fromJson(json['ttsConfig'] as Map<String, dynamic>)
+          : null,
       createTime: json['createTime'] != null
           ? DateTime.parse(json['createTime'] as String)
           : null,
@@ -71,6 +78,7 @@ class Companion {
     'status': status,
     'companionOrder': companionOrder,
     'personalityKeys': personalityKeys,
+    if (ttsConfig != null) 'ttsConfig': ttsConfig!.toJson(),
     'createTime': createTime?.toIso8601String(),
     'updateTime': updateTime?.toIso8601String(),
   };

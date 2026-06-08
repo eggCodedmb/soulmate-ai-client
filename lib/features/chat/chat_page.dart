@@ -13,6 +13,9 @@ import '../../core/network/api_service.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/companion.dart';
 import '../../shared/models/message.dart';
+import '../../shared/models/tts_config.dart';
+import 'tts_audio_service.dart';
+import 'tts_provider.dart';
 
 /// 聊天详情页
 class ChatPage extends ConsumerStatefulWidget {
@@ -41,6 +44,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   String? _companionName;
   String? _companionAvatarUrl;
   List<String> _companionPersonalities = [];
+  TtsConfig? _companionTtsConfig;
   late final int _conversationId;
 
   // 情绪映射
@@ -71,6 +75,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   @override
   void dispose() {
     _streamCancelToken?.cancel('页面退出');
+    // 停止 TTS 播放
+    ref.read(ttsProvider.notifier).stop();
     _messageController.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();
@@ -92,6 +98,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _companionName = companion.name;
       _companionAvatarUrl = companion.avatarUrl;
       _companionPersonalities = companion.personalityKeys;
+      _companionTtsConfig = companion.ttsConfig;
 
       final pageResult = await apiService.getMessages(
         _conversationId,
@@ -213,6 +220,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       // 如果没有错误且有内容，刷新消息列表获取服务端真实数据
       if (!hasError && buffer.isNotEmpty) {
         await _refreshMessages();
+        // 自动触发 TTS 生成
+        _autoGenerateTts(buffer.toString());
       } else if (!hasError && buffer.isEmpty) {
         // AI 没返回任何内容，移除空占位
         setState(() {
@@ -283,6 +292,78 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         );
       }
     });
+  }
+
+  // ==================== TTS 相关 ====================
+
+  /// 获取有效的 TTS 配置（伴侣级优先，否则全局默认）
+  TtsConfig? get _effectiveTtsConfig {
+    return getEffectiveTtsConfig(_companionTtsConfig);
+  }
+
+  /// 生成消息的 TTS key
+  String _messageTtsKey(Message message) {
+    return '${_conversationId}_${message.id}';
+  }
+
+  /// 自动为 AI 回复生成 TTS 音频
+  void _autoGenerateTts(String text) {
+    if (!mounted) return;
+    final config = _effectiveTtsConfig;
+    if (config == null) return;
+
+    // 找到最新的 AI 消息（refreshMessages 后 id > 0）
+    final aiMessage = _messages.firstWhere(
+      (m) => m.senderType == 'companion' && m.id > 0,
+      orElse: () => _messages.first,
+    );
+
+    final key = _messageTtsKey(aiMessage);
+    ref.read(ttsProvider.notifier).generateForMessage(
+      messageKey: key,
+      text: text,
+      config: config,
+    );
+  }
+
+  /// 点击喇叭：播放/暂停/重新生成
+  void _onSpeakerTap(Message message) {
+    if (!mounted) return;
+    final key = _messageTtsKey(message);
+    final entry = ref.read(ttsProvider).getMessageState(key);
+    final notifier = ref.read(ttsProvider.notifier);
+
+    switch (entry.status) {
+      case MessageTtsStatus.ready:
+        notifier.playMessage(key);
+        break;
+      case MessageTtsStatus.playing:
+        notifier.togglePause(key);
+        break;
+      case MessageTtsStatus.paused:
+        notifier.togglePause(key);
+        break;
+      case MessageTtsStatus.error:
+      case MessageTtsStatus.none:
+        // 重新生成
+        final config = _effectiveTtsConfig;
+        if (config != null) {
+          notifier.generateForMessage(
+            messageKey: key,
+            text: message.content,
+            config: config,
+          );
+        }
+        break;
+      case MessageTtsStatus.generating:
+        // 正在生成，不做操作
+        break;
+    }
+  }
+
+  /// 获取当前伴侣的 TTS 配置，用于显示
+  TtsConfig? _getCompanionTtsConfig() {
+    return _companionTtsConfig;
   }
 
   /// 获取伴侣性格主题色
@@ -746,6 +827,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 if (!isUser && message.emotionTag != null && message.emotionTag!.isNotEmpty)
                   _buildEmotionTag(message.emotionTag!, isDark),
 
+                // TTS 喇叭按钮（仅AI消息，流式完成且有TTS配置时显示）
+                if (!isUser && message.id > 0 && _effectiveTtsConfig != null)
+                  _buildTtsButton(message, isDark),
+
                 const SizedBox(height: 4),
                 _buildMessageMeta(message, isUser, isDark),
               ],
@@ -817,6 +902,84 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// TTS 喇叭按钮
+  Widget _buildTtsButton(Message message, bool isDark) {
+    final key = _messageTtsKey(message);
+    // 使用 watch 实现响应式更新
+    final entry = ref.watch(ttsProvider).getMessageState(key);
+
+    // 根据状态决定图标和行为
+    IconData icon;
+    Color iconColor;
+    bool isAnimated = false;
+
+    switch (entry.status) {
+      case MessageTtsStatus.generating:
+        icon = Icons.hourglass_top_rounded;
+        iconColor = AppColors.brandPink.withValues(alpha: 0.5);
+        isAnimated = true;
+        break;
+      case MessageTtsStatus.ready:
+        icon = Icons.volume_up_rounded;
+        iconColor = isDark
+            ? Colors.white.withValues(alpha: 0.35)
+            : Colors.black.withValues(alpha: 0.25);
+        break;
+      case MessageTtsStatus.playing:
+        icon = Icons.volume_up_rounded;
+        iconColor = AppColors.brandPink;
+        isAnimated = true;
+        break;
+      case MessageTtsStatus.paused:
+        icon = Icons.volume_off_rounded;
+        iconColor = AppColors.brandPink.withValues(alpha: 0.6);
+        break;
+      case MessageTtsStatus.error:
+        icon = Icons.refresh_rounded;
+        iconColor = Colors.orange.withValues(alpha: 0.6);
+        break;
+      case MessageTtsStatus.none:
+        icon = Icons.volume_up_rounded;
+        iconColor = isDark
+            ? Colors.white.withValues(alpha: 0.2)
+            : Colors.black.withValues(alpha: 0.15);
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, left: 4),
+      child: GestureDetector(
+        onTap: () => _onSpeakerTap(message),
+        child: isAnimated && entry.status == MessageTtsStatus.generating
+            ? SizedBox(
+                width: 28,
+                height: 28,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.brandPink.withValues(alpha: 0.5),
+                  ),
+                ),
+              )
+            : AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: entry.status == MessageTtsStatus.playing
+                      ? AppColors.brandPink.withValues(alpha: 0.1)
+                      : Colors.transparent,
+                  shape: BoxShape.circle,
+                ),
+                child: isAnimated && entry.status == MessageTtsStatus.playing
+                    ? _PulsingIcon(icon: icon, color: iconColor, size: 18)
+                    : Icon(icon, color: iconColor, size: 18),
+              ),
       ),
     );
   }
@@ -1346,6 +1509,57 @@ class _MessageBubbleWrapperState extends State<_MessageBubbleWrapper>
         position: _offset,
         child: widget.child,
       ),
+    );
+  }
+}
+
+// ==================== TTS 播放脉冲图标 ====================
+
+class _PulsingIcon extends StatefulWidget {
+  final IconData icon;
+  final Color color;
+  final double size;
+
+  const _PulsingIcon({
+    required this.icon,
+    required this.color,
+    this.size = 18,
+  });
+
+  @override
+  State<_PulsingIcon> createState() => _PulsingIconState();
+}
+
+class _PulsingIconState extends State<_PulsingIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Opacity(
+          opacity: 0.5 + 0.5 * _controller.value,
+          child: child,
+        );
+      },
+      child: Icon(widget.icon, color: widget.color, size: widget.size),
     );
   }
 }

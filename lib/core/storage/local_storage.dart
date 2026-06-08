@@ -86,6 +86,50 @@ class LocalStorage {
     }
   }
 
+  // ==================== TTS 配置 ====================
+
+  /// TTS 服务器 Base URL
+  static String? get ttsBaseUrl => _prefs.getString('tts_base_url');
+  static Future<void> setTtsBaseUrl(String? url) async {
+    if (url != null && url.isNotEmpty) {
+      await _prefs.setString('tts_base_url', url);
+    } else {
+      await _prefs.remove('tts_base_url');
+    }
+  }
+
+  /// TTS 全局默认声音档案 ID
+  static String? get ttsGlobalProfileId => _prefs.getString('tts_global_profile_id');
+  static Future<void> setTtsGlobalProfileId(String? id) async {
+    if (id != null && id.isNotEmpty) {
+      await _prefs.setString('tts_global_profile_id', id);
+    } else {
+      await _prefs.remove('tts_global_profile_id');
+    }
+  }
+
+  /// TTS 全局默认声音档案名称（缓存显示用）
+  static String? get ttsGlobalProfileName => _prefs.getString('tts_global_profile_name');
+  static Future<void> setTtsGlobalProfileName(String? name) async {
+    if (name != null && name.isNotEmpty) {
+      await _prefs.setString('tts_global_profile_name', name);
+    } else {
+      await _prefs.remove('tts_global_profile_name');
+    }
+  }
+
+  /// TTS 全局默认语言
+  static String get ttsGlobalLanguage => _prefs.getString('tts_global_language') ?? 'zh';
+  static Future<void> setTtsGlobalLanguage(String lang) async {
+    await _prefs.setString('tts_global_language', lang);
+  }
+
+  /// TTS 全局默认引擎
+  static String get ttsGlobalEngine => _prefs.getString('tts_global_engine') ?? 'qwen';
+  static Future<void> setTtsGlobalEngine(String engine) async {
+    await _prefs.setString('tts_global_engine', engine);
+  }
+
   // ==================== 通用方法 ====================
 
   /// 获取字符串
