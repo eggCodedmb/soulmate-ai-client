@@ -22,6 +22,7 @@ class TtsAudioService {
   /// 当前播放状态
   bool _isPlaying = false;
   String? _playingMessageKey;
+  String? _currentFilePath;
 
   /// 播放状态回调
   VoidCallback? _onStateChanged;
@@ -40,6 +41,8 @@ class TtsAudioService {
         // 回调完成后再清除 key
         if (completed) {
           _playingMessageKey = null;
+          _currentFilePath = null; // 播放完成重置当前路径，确保下次播放相同文件能重新 load
+          _player.stop(); // 彻底停止播放器以重置状态为 idle，释放音频资源
         }
       } else {
         _onStateChanged?.call();
@@ -124,7 +127,10 @@ class TtsAudioService {
   /// 播放指定文件
   Future<void> play(String filePath, String messageKey) async {
     try {
-      await _player.setFilePath(filePath);
+      if (_currentFilePath != filePath) {
+        await _player.setFilePath(filePath);
+        _currentFilePath = filePath;
+      }
       // 强制将播放位置重置到起点，以解决在 just_audio 中重复播放相同文件失效的问题
       await _player.seek(Duration.zero);
       _playingMessageKey = messageKey;
@@ -133,6 +139,7 @@ class TtsAudioService {
       await _player.play();
     } catch (e) {
       debugPrint('[TTS] 播放失败: $e');
+      _currentFilePath = null;
       _playingMessageKey = null;
       _isPlaying = false;
       _onStateChanged?.call();
@@ -151,6 +158,7 @@ class TtsAudioService {
   /// 停止播放
   Future<void> stop() async {
     await _player.stop();
+    _currentFilePath = null;
     _playingMessageKey = null;
     _isPlaying = false;
     _onStateChanged?.call();
