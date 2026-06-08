@@ -28,24 +28,6 @@ class TtsApiClient {
       updatedAt: '',
     ),
     VoiceProfile(
-      id: 'default_zh',
-      name: '默认中文女声',
-      language: 'zh',
-      voiceType: 'preset',
-      defaultEngine: 'mimo',
-      createdAt: '',
-      updatedAt: '',
-    ),
-    VoiceProfile(
-      id: 'default_en',
-      name: '默认英文女声',
-      language: 'en',
-      voiceType: 'preset',
-      defaultEngine: 'mimo',
-      createdAt: '',
-      updatedAt: '',
-    ),
-    VoiceProfile(
       id: '冰糖',
       name: '冰糖',
       language: 'zh',
@@ -350,7 +332,7 @@ class TtsApiClient {
     if (providerType == 'mimo') {
       try {
         final dummyRequest = TtsGenerateRequest(
-          profileId: 'default_zh',
+          profileId: 'mimo_default',
           text: '测试连接',
           language: 'zh',
           instruct: '用温柔的声音朗读',
