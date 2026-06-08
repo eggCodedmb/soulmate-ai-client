@@ -721,9 +721,19 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
     final colorScheme = theme.colorScheme;
     final companion = _currentCompanion;
 
+    // 计算在一起天数：创建当天为第一天
     final days = companion?.createTime != null
-        ? DateTime.now().difference(companion!.createTime!).inDays
-        : 0;
+        ? DateTime.now().difference(companion!.createTime!).inDays + 1
+        : 1;
+
+    // 获取当前伴侣对话的AI回复数
+    var replyCount = 0;
+    if (companion != null) {
+      final conv = _conversations
+          .where((c) => c.companionId == companion.id)
+          .firstOrNull;
+      replyCount = conv?.companionReplyCount ?? 0;
+    }
 
     return SliverToBoxAdapter(
       child: Padding(
@@ -756,7 +766,7 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
               _buildStatItem(
                 context,
                 icon: Icons.chat_bubble_rounded,
-                value: '${_conversations.length}',
+                value: '$replyCount',
                 label: '次对话',
                 color: AppColors.brandWarmPeach,
               ),

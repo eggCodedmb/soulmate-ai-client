@@ -11,6 +11,7 @@ class Conversation {
   final int contextWindow;
   final DateTime? createTime;
   final DateTime? updateTime;
+  final int companionReplyCount;
 
   const Conversation({
     required this.id,
@@ -24,6 +25,7 @@ class Conversation {
     this.contextWindow = 50,
     this.createTime,
     this.updateTime,
+    this.companionReplyCount = 0,
   });
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
@@ -45,6 +47,7 @@ class Conversation {
       updateTime: json['updateTime'] != null
           ? DateTime.parse(json['updateTime'] as String)
           : null,
+      companionReplyCount: (json['companionReplyCount'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -60,5 +63,6 @@ class Conversation {
     'contextWindow': contextWindow,
     'createTime': createTime?.toIso8601String(),
     'updateTime': updateTime?.toIso8601String(),
+    'companionReplyCount': companionReplyCount,
   };
 }
