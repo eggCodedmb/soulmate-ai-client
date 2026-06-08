@@ -151,6 +151,7 @@ class TtsNotifier extends StateNotifier<TtsState> {
     required String messageKey,
     required String text,
     required TtsConfig config,
+    bool autoPlay = false,
   }) async {
     final svc = _audioService;
     if (svc == null || !svc.isConfigured) return;
@@ -162,6 +163,9 @@ class TtsNotifier extends StateNotifier<TtsState> {
         status: MessageTtsStatus.ready,
         audioPath: cached,
       ));
+      if (autoPlay) {
+        await playMessage(messageKey);
+      }
       return;
     }
 
@@ -177,6 +181,9 @@ class TtsNotifier extends StateNotifier<TtsState> {
           status: MessageTtsStatus.ready,
           audioPath: path,
         ));
+        if (autoPlay) {
+          await playMessage(messageKey);
+        }
       } else {
         _updateMessageState(messageKey, const MessageTtsEntry().copyWith(
           status: MessageTtsStatus.error,

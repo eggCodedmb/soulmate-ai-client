@@ -323,6 +323,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       messageKey: key,
       text: text,
       config: config,
+      autoPlay: true,
     );
   }
 
@@ -345,13 +346,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         break;
       case MessageTtsStatus.error:
       case MessageTtsStatus.none:
-        // 重新生成
+        // 重新生成并播放
         final config = _effectiveTtsConfig;
         if (config != null) {
           notifier.generateForMessage(
             messageKey: key,
             text: message.content,
             config: config,
+            autoPlay: true,
           );
         }
         break;
@@ -1537,10 +1539,11 @@ class _PulsingIconState extends State<_PulsingIcon>
   @override
   void initState() {
     super.initState();
+    // 持续前向循环动画来模拟声波向外扩散的效果
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 900),
       vsync: this,
-    )..repeat(reverse: true);
+    )..repeat();
   }
 
   @override
@@ -1554,12 +1557,30 @@ class _PulsingIconState extends State<_PulsingIcon>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        return Opacity(
-          opacity: 0.5 + 0.5 * _controller.value,
-          child: child,
+        final val = _controller.value;
+        
+        // 随时间推移循环切换图标，营造出“声波一级级往外扩”的动画感觉
+        IconData currentIcon;
+        if (val < 0.33) {
+          currentIcon = Icons.volume_mute_rounded; // 仅喇叭主体
+        } else if (val < 0.66) {
+          currentIcon = Icons.volume_down_rounded; // 喇叭 + 一级声波
+        } else {
+          currentIcon = Icons.volume_up_rounded;   // 喇叭 + 二级声波
+        }
+
+        // 呼吸放大缩小的扩音动效：在动画正中间（0.5）达到最大，随后收回
+        final scale = 0.92 + 0.16 * (val < 0.5 ? val * 2 : (1.0 - val) * 2);
+
+        return Transform.scale(
+          scale: scale,
+          child: Icon(
+            currentIcon,
+            color: widget.color,
+            size: widget.size,
+          ),
         );
       },
-      child: Icon(widget.icon, color: widget.color, size: widget.size),
     );
   }
 }
