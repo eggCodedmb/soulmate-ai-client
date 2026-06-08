@@ -151,6 +151,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                       children: [
                         _buildMenuItem(
                           context,
+                          icon: Icons.business_rounded,
+                          iconColor: const Color(0xFF9C27B0),
+                          title: 'TTS 服务商',
+                          subtitle: LocalStorage.ttsProviderType == 'mimo' ? 'Xiaomi MiMo (云端)' : 'Voicebox (本地)',
+                          isDark: isDark,
+                          onTap: () => _showTtsProviderDialog(context, isDark),
+                        ),
+                        _buildMenuDivider(context, isDark),
+                        _buildMenuItem(
+                          context,
                           icon: Icons.dns_outlined,
                           iconColor: const Color(0xFF7C4DFF),
                           title: 'TTS 服务器地址',
@@ -158,6 +168,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           isDark: isDark,
                           onTap: () => _showTtsUrlDialog(context, isDark),
                         ),
+                        if (LocalStorage.ttsProviderType == 'mimo') ...[
+                          _buildMenuDivider(context, isDark),
+                          _buildMenuItem(
+                            context,
+                            icon: Icons.vpn_key_outlined,
+                            iconColor: const Color(0xFFFF9800),
+                            title: 'API Key',
+                            subtitle: (LocalStorage.ttsApiKey == null || LocalStorage.ttsApiKey!.isEmpty) ? '未配置' : '已配置 (已隐藏)',
+                            isDark: isDark,
+                            onTap: () => _showTtsApiKeyDialog(context, isDark),
+                          ),
+                          _buildMenuDivider(context, isDark),
+                          _buildMenuItem(
+                            context,
+                            icon: Icons.smart_toy_outlined,
+                            iconColor: const Color(0xFF4CAF50),
+                            title: '模型名称',
+                            subtitle: LocalStorage.ttsModel,
+                            isDark: isDark,
+                            onTap: () => _showTtsModelDialog(context, isDark),
+                          ),
+                        ],
                         _buildMenuDivider(context, isDark),
                         _buildMenuItem(
                           context,
@@ -1179,33 +1211,34 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           );
                         }).toList(),
                       ),
-                      const SizedBox(height: 20),
-
-                      // 引擎选择
-                      Text(
-                        '合成引擎',
-                        style: TextStyle(
-                          color: isDark ? Colors.white.withOpacity(0.8) : Colors.black87,
-                          fontSize: 14, fontWeight: FontWeight.w600,
+                      if (LocalStorage.ttsProviderType != 'mimo') ...[
+                        const SizedBox(height: 20),
+                        // 引擎选择
+                        Text(
+                          '合成引擎',
+                          style: TextStyle(
+                            color: isDark ? Colors.white.withOpacity(0.8) : Colors.black87,
+                            fontSize: 14, fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8, runSpacing: 8,
-                        children: engines.map((eng) {
-                          final isSelected = selectedEngine == eng['value'];
-                          return ChoiceChip(
-                            label: Text(eng['label']!),
-                            selected: isSelected,
-                            onSelected: (selected) {
-                              if (selected) {
-                                HapticFeedback.lightImpact();
-                                setSheetState(() => selectedEngine = eng['value']!);
-                              }
-                            },
-                          );
-                        }).toList(),
-                      ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8, runSpacing: 8,
+                          children: engines.map((eng) {
+                            final isSelected = selectedEngine == eng['value'];
+                            return ChoiceChip(
+                              label: Text(eng['label']!),
+                              selected: isSelected,
+                              onSelected: (selected) {
+                                if (selected) {
+                                  HapticFeedback.lightImpact();
+                                  setSheetState(() => selectedEngine = eng['value']!);
+                                }
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ],
                       const SizedBox(height: 24),
 
                       // 保存按钮
@@ -1238,6 +1271,508 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// TTS 服务商选择弹窗
+  void _showTtsProviderDialog(BuildContext context, bool isDark) {
+    final currentProvider = LocalStorage.ttsProviderType;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              '选择 TTS 服务商',
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 24),
+            _buildProviderOption(
+              context,
+              icon: Icons.dns_outlined,
+              title: 'Voicebox (本地)',
+              subtitle: '连接到本地运行的 Voicebox 语音服务器',
+              value: 'voicebox',
+              isSelected: currentProvider == 'voicebox',
+              isDark: isDark,
+            ),
+            const SizedBox(height: 12),
+            _buildProviderOption(
+              context,
+              icon: Icons.cloud_queue_rounded,
+              title: 'Xiaomi MiMo (云端)',
+              subtitle: '连接到小米云端 TTS 服务，音质逼真自然',
+              value: 'mimo',
+              isSelected: currentProvider == 'mimo',
+              isDark: isDark,
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProviderOption(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String value,
+    required bool isSelected,
+    required bool isDark,
+  }) {
+    return GestureDetector(
+      onTap: () async {
+        HapticFeedback.lightImpact();
+        await LocalStorage.setTtsProviderType(value);
+
+        // 自动适配默认地址
+        final currentUrl = LocalStorage.ttsBaseUrl;
+        if (value == 'mimo') {
+          if (currentUrl == null ||
+              currentUrl.isEmpty ||
+              currentUrl.contains('127.0.0.1') ||
+              currentUrl.contains('localhost')) {
+            await LocalStorage.setTtsBaseUrl('https://token-plan-sgp.xiaomimimo.com/v1');
+          }
+        } else if (value == 'voicebox') {
+          if (currentUrl == null ||
+              currentUrl.isEmpty ||
+              currentUrl.contains('xiaomimimo.com')) {
+            await LocalStorage.setTtsBaseUrl('http://127.0.0.1:17493');
+          }
+        }
+
+        Navigator.pop(context);
+        setState(() {});
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF7C4DFF).withOpacity(isDark ? 0.15 : 0.08)
+              : (isDark
+                  ? Colors.white.withOpacity(0.05)
+                  : Colors.grey.withOpacity(0.05)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF7C4DFF)
+                : (isDark
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.grey.withOpacity(0.2)),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFF7C4DFF).withOpacity(isDark ? 0.2 : 0.1)
+                    : (isDark
+                        ? Colors.white.withOpacity(0.08)
+                        : Colors.grey.withOpacity(0.1)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                color: isSelected
+                    ? const Color(0xFF7C4DFF)
+                    : (isDark
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey[600]),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: isSelected
+                          ? (isDark ? Colors.white : Colors.black)
+                          : (isDark
+                              ? Colors.white.withOpacity(0.7)
+                              : Colors.grey[700]),
+                      fontSize: 15,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.4)
+                          : Colors.grey[500],
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(
+                Icons.check_circle_rounded,
+                color: Color(0xFF7C4DFF),
+                size: 22,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// TTS API Key 弹窗
+  void _showTtsApiKeyDialog(BuildContext context, bool isDark) {
+    final controller = TextEditingController(text: LocalStorage.ttsApiKey ?? '');
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                '配置 API Key',
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '用于授权访问云端服务，Key 不会被公开',
+                style: TextStyle(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.5)
+                      : Colors.grey[600],
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.grey.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.15)
+                        : Colors.grey.withOpacity(0.2),
+                  ),
+                ),
+                child: TextField(
+                  controller: controller,
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '输入您的 API Key',
+                    hintStyle: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.3)
+                          : Colors.grey[400],
+                    ),
+                    labelText: 'API Key',
+                    labelStyle: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.all(16),
+                    prefixIcon: Icon(
+                      Icons.vpn_key_outlined,
+                      color: isDark
+                          ? Colors.white.withOpacity(0.5)
+                          : Colors.grey[500],
+                    ),
+                  ),
+                  obscureText: true,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 56,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.2)
+                                  : Colors.grey.withOpacity(0.3),
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          '取消',
+                          style: TextStyle(
+                            color: isDark
+                                ? Colors.white.withOpacity(0.7)
+                                : Colors.grey[700],
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: SizedBox(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          await LocalStorage.setTtsApiKey(controller.text.trim());
+                          Navigator.pop(context);
+                          setState(() {});
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7C4DFF),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          '保存',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// TTS 模型名称配置弹窗
+  void _showTtsModelDialog(BuildContext context, bool isDark) {
+    final controller = TextEditingController(text: LocalStorage.ttsModel);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                '配置模型名称',
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '指定用于语音合成的模型名称',
+                style: TextStyle(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.5)
+                      : Colors.grey[600],
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.grey.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.15)
+                        : Colors.grey.withOpacity(0.2),
+                  ),
+                ),
+                child: TextField(
+                  controller: controller,
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'mimo-v2.5-tts',
+                    hintStyle: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.3)
+                          : Colors.grey[400],
+                    ),
+                    labelText: '模型名称',
+                    labelStyle: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.all(16),
+                    prefixIcon: Icon(
+                      Icons.smart_toy_outlined,
+                      color: isDark
+                          ? Colors.white.withOpacity(0.5)
+                          : Colors.grey[500],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 56,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.2)
+                                  : Colors.grey.withOpacity(0.3),
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          '取消',
+                          style: TextStyle(
+                            color: isDark
+                                ? Colors.white.withOpacity(0.7)
+                                : Colors.grey[700],
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: SizedBox(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final model = controller.text.trim();
+                          if (model.isNotEmpty) {
+                            await LocalStorage.setTtsModel(model);
+                          }
+                          Navigator.pop(context);
+                          setState(() {});
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7C4DFF),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          '保存',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
         ),
       ),
@@ -1318,7 +1853,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                       color: isDark ? Colors.white : Colors.black,
                     ),
                     decoration: InputDecoration(
-                      hintText: 'http://localhost:8000',
+                      hintText: LocalStorage.ttsProviderType == 'mimo'
+                          ? 'https://token-plan-sgp.xiaomimimo.com/v1'
+                          : 'http://localhost:17493',
                       hintStyle: TextStyle(
                         color: isDark
                             ? Colors.white.withOpacity(0.3)

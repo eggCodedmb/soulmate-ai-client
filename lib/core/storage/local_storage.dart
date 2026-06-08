@@ -88,6 +88,28 @@ class LocalStorage {
 
   // ==================== TTS 配置 ====================
 
+  /// TTS 服务商类型 (voicebox 或 mimo)
+  static String get ttsProviderType => _prefs.getString('tts_provider_type') ?? 'voicebox';
+  static Future<void> setTtsProviderType(String type) async {
+    await _prefs.setString('tts_provider_type', type);
+  }
+
+  /// TTS API Key (mimo 使用)
+  static String? get ttsApiKey => _prefs.getString('tts_api_key');
+  static Future<void> setTtsApiKey(String? key) async {
+    if (key != null && key.isNotEmpty) {
+      await _prefs.setString('tts_api_key', key);
+    } else {
+      await _prefs.remove('tts_api_key');
+    }
+  }
+
+  /// TTS 模型名称 (mimo 使用)
+  static String get ttsModel => _prefs.getString('tts_model') ?? 'mimo-v2.5-tts';
+  static Future<void> setTtsModel(String model) async {
+    await _prefs.setString('tts_model', model);
+  }
+
   /// TTS 服务器 Base URL
   static String? get ttsBaseUrl => _prefs.getString('tts_base_url');
   static Future<void> setTtsBaseUrl(String? url) async {

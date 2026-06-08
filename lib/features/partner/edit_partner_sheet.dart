@@ -494,8 +494,10 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
                         if (_ttsConfig.profileId != null) ...[
                           const SizedBox(height: 20),
                           _buildTtsLanguageSelector(scheme),
-                          const SizedBox(height: 20),
-                          _buildTtsEngineSelector(scheme),
+                          if (LocalStorage.ttsProviderType != 'mimo') ...[
+                            const SizedBox(height: 20),
+                            _buildTtsEngineSelector(scheme),
+                          ],
                         ],
                       ],
                     ],
