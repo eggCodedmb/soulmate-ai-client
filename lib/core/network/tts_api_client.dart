@@ -385,6 +385,42 @@ class TtsApiClient {
         return '无法连接 TTS 服务器，请检查地址是否正确';
       case DioExceptionType.badResponse:
         final statusCode = e.response?.statusCode;
+        dynamic responseData = e.response?.data;
+
+        // 如果是二进制字节流（如 Voicebox 接口报错），尝试解码为 String
+        if (responseData is List<int>) {
+          try {
+            final decoded = utf8.decode(responseData);
+            responseData = json.decode(decoded);
+          } catch (_) {
+            // 解码失败则忽略
+          }
+        } else if (responseData is String) {
+          try {
+            responseData = json.decode(responseData);
+          } catch (_) {
+            // 解析失败则忽略
+          }
+        }
+
+        if (responseData is Map<String, dynamic>) {
+          // 兼容 OpenAI 错误格式: {"error": {"message": "..."}}
+          if (responseData['error'] is Map<String, dynamic>) {
+            final errorDetail = responseData['error'] as Map<String, dynamic>;
+            if (errorDetail['message'] != null) {
+              return '${errorDetail['message']} ($statusCode)';
+            }
+          }
+          // 兼容通用错误格式: {"message": "..."}
+          if (responseData['message'] != null) {
+            return '${responseData['message']} ($statusCode)';
+          }
+          // 兼容其他错误格式: {"error": "..."}
+          if (responseData['error'] is String) {
+            return '${responseData['error']} ($statusCode)';
+          }
+        }
+
         return 'TTS 服务器错误 ($statusCode)';
       default:
         return 'TTS 请求失败: ${e.message}';

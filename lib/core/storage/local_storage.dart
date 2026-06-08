@@ -121,35 +121,53 @@ class LocalStorage {
   }
 
   /// TTS 全局默认声音档案 ID
-  static String? get ttsGlobalProfileId => _prefs.getString('tts_global_profile_id');
+  static String? get ttsGlobalProfileId {
+    final type = ttsProviderType;
+    return _prefs.getString('tts_global_profile_id_$type');
+  }
   static Future<void> setTtsGlobalProfileId(String? id) async {
+    final type = ttsProviderType;
+    final key = 'tts_global_profile_id_$type';
     if (id != null && id.isNotEmpty) {
-      await _prefs.setString('tts_global_profile_id', id);
+      await _prefs.setString(key, id);
     } else {
-      await _prefs.remove('tts_global_profile_id');
+      await _prefs.remove(key);
     }
   }
 
   /// TTS 全局默认声音档案名称（缓存显示用）
-  static String? get ttsGlobalProfileName => _prefs.getString('tts_global_profile_name');
+  static String? get ttsGlobalProfileName {
+    final type = ttsProviderType;
+    return _prefs.getString('tts_global_profile_name_$type');
+  }
   static Future<void> setTtsGlobalProfileName(String? name) async {
+    final type = ttsProviderType;
+    final key = 'tts_global_profile_name_$type';
     if (name != null && name.isNotEmpty) {
-      await _prefs.setString('tts_global_profile_name', name);
+      await _prefs.setString(key, name);
     } else {
-      await _prefs.remove('tts_global_profile_name');
+      await _prefs.remove(key);
     }
   }
 
   /// TTS 全局默认语言
-  static String get ttsGlobalLanguage => _prefs.getString('tts_global_language') ?? 'zh';
+  static String get ttsGlobalLanguage {
+    final type = ttsProviderType;
+    return _prefs.getString('tts_global_language_$type') ?? 'zh';
+  }
   static Future<void> setTtsGlobalLanguage(String lang) async {
-    await _prefs.setString('tts_global_language', lang);
+    final type = ttsProviderType;
+    await _prefs.setString('tts_global_language_$type', lang);
   }
 
   /// TTS 全局默认引擎
-  static String get ttsGlobalEngine => _prefs.getString('tts_global_engine') ?? 'qwen';
+  static String get ttsGlobalEngine {
+    final type = ttsProviderType;
+    return _prefs.getString('tts_global_engine_$type') ?? (type == 'mimo' ? 'mimo' : 'qwen');
+  }
   static Future<void> setTtsGlobalEngine(String engine) async {
-    await _prefs.setString('tts_global_engine', engine);
+    final type = ttsProviderType;
+    await _prefs.setString('tts_global_engine_$type', engine);
   }
 
   // ==================== 通用方法 ====================
