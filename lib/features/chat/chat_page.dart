@@ -1020,6 +1020,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
+  String _cleanMessageContent(String content) {
+    return content
+        .replaceAll(RegExp(r'<command.*?>.*?</command>', dotAll: true), '')
+        .replaceAll(RegExp(r'<command.*$', dotAll: true), '')
+        .trim();
+  }
+
   /// 构建消息文本，流式传输时带闪烁光标
   Widget _buildMessageText(Message message, bool isUser, bool isDark) {
     final isStreamingThis = _isStreaming &&
@@ -1032,9 +1039,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             ? Colors.white.withValues(alpha: 0.88)
             : const Color(0xFF1A1A2E);
 
+    final cleanContent = _cleanMessageContent(message.content);
+
     if (!isStreamingThis) {
       return Text(
-        message.content,
+        cleanContent,
         style: TextStyle(fontSize: 15, height: 1.55, color: textColor),
       );
     }
@@ -1044,7 +1053,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       text: TextSpan(
         children: [
           TextSpan(
-            text: message.content,
+            text: cleanContent,
             style: TextStyle(fontSize: 15, height: 1.55, color: textColor),
           ),
           WidgetSpan(

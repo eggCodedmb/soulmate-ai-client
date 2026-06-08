@@ -7,8 +7,8 @@ import 'interceptors/logging_interceptor.dart';
 /// API客户端配置 - 支持主备地址自动切换
 class ApiClient {
   // 主备服务器地址
-  static const String primaryBaseUrl = 'https://cupid-discard-ritzy.ngrok-free.dev';
-  static const String fallbackBaseUrl = 'http://10.2.3.6:8080';
+  static const String primaryBaseUrl = 'http://192.168.2.240:8080';
+  static const String fallbackBaseUrl = 'https://cupid-discard-ritzy.ngrok-free.dev';
   static const String apiPrefix = '/api';
 
   // 超时配置

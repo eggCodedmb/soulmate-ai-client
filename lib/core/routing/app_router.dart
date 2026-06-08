@@ -14,9 +14,16 @@ import '../../features/settings/settings_page.dart';
 import '../../features/subscription/subscription_page.dart';
 import '../../features/memory/memory_page.dart';
 import '../../features/splash/splash_page.dart';
+import '../../features/profile/reminder_list_page.dart';
+import '../../features/profile/reminder_edit_page.dart';
+import '../../features/chat/incoming_call_page.dart';
+import '../../shared/models/reminder.dart';
 import '../storage/secure_storage.dart';
 import '../storage/local_storage.dart';
 import 'main_scaffold.dart';
+
+/// 全局 NavigatorKey
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 /// 全局路由观察器 — 用于页面可见性刷新
 final RouteObserver<ModalRoute<void>> routeObserver =
@@ -25,6 +32,7 @@ final RouteObserver<ModalRoute<void>> routeObserver =
 /// 路由配置
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     debugLogDiagnostics: true,
     observers: [routeObserver],
@@ -43,6 +51,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/auth',
         builder: (context, state) => const AuthPage(),
+      ),
+      // 来电全屏页面
+      GoRoute(
+        path: '/call/:reminderId',
+        builder: (context, state) {
+          final reminderId = int.parse(state.pathParameters['reminderId']!);
+          final reminder = state.extra as Reminder?;
+          return IncomingCallPage(reminderId: reminderId, reminder: reminder);
+        },
       ),
       // 主界面（底部Tab）
       StatefulShellRoute.indexedStack(
@@ -117,6 +134,19 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'memories',
                     builder: (context, state) => const MemoryPage(),
+                  ),
+                  GoRoute(
+                    path: 'reminders',
+                    builder: (context, state) => const ReminderListPage(),
+                    routes: [
+                      GoRoute(
+                        path: 'edit',
+                        builder: (context, state) {
+                          final reminder = state.extra as Reminder?;
+                          return ReminderEditPage(reminder: reminder);
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),

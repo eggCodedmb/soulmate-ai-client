@@ -453,6 +453,16 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
           _buildDivider(context, isDark),
           _buildMenuItem(
             context,
+            icon: Icons.alarm_rounded,
+            iconColor: const Color(0xFF4CAF50),
+            title: '定时叫醒/通知',
+            subtitle: '伴侣来电唤醒与日程提醒',
+            isDark: isDark,
+            onTap: () => context.push('/profile/reminders'),
+          ),
+          _buildDivider(context, isDark),
+          _buildMenuItem(
+            context,
             icon: Icons.workspace_premium_outlined,
             iconColor: const Color(0xFFFFD700),
             title: '订阅会员',

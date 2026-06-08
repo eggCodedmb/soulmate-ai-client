@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -27,8 +28,10 @@ class TtsAudioService {
   /// 播放状态回调
   VoidCallback? _onStateChanged;
 
+  StreamSubscription<PlayerState>? _playerStateSubscription;
+
   TtsAudioService(this._api) {
-    _player.playerStateStream.listen((state) {
+    _playerStateSubscription = _player.playerStateStream.listen((state) {
       final wasPlaying = _isPlaying;
       final completed = state.processingState == ProcessingState.completed;
       // 在 just_audio 中，当自然播放完成时，state.playing 依然可能为 true。
@@ -166,6 +169,8 @@ class TtsAudioService {
 
   /// 释放资源
   void dispose() {
+    _onStateChanged = null;
+    _playerStateSubscription?.cancel();
     _player.dispose();
   }
 }

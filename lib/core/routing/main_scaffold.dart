@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/app_colors.dart';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../services/reminder_scheduler_service.dart';
+
 /// Tab 配置
 class _TabConfig {
   final IconData icon;
@@ -17,7 +20,7 @@ class _TabConfig {
 }
 
 /// 主界面脚手架 - 底部Tab导航
-class MainScaffold extends StatelessWidget {
+class MainScaffold extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
 
   const MainScaffold({
@@ -25,6 +28,11 @@ class MainScaffold extends StatelessWidget {
     required this.navigationShell,
   });
 
+  @override
+  ConsumerState<MainScaffold> createState() => _MainScaffoldState();
+}
+
+class _MainScaffoldState extends ConsumerState<MainScaffold> {
   static const List<_TabConfig> _tabs = [
     _TabConfig(
       icon: Icons.home_outlined,
@@ -49,19 +57,27 @@ class MainScaffold extends StatelessWidget {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(reminderSchedulerProvider).start();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     // 子路由页面隐藏底部Tab栏（只有Tab根页面才显示）
     final segments = GoRouterState.of(context).uri.pathSegments;
     final showBottomNav = segments.length <= 1;
 
     return Scaffold(
-      body: navigationShell,
+      body: widget.navigationShell,
       bottomNavigationBar: showBottomNav
           ? _AnimatedBottomNavBar(
-              currentIndex: navigationShell.currentIndex,
-              onTap: (index) => navigationShell.goBranch(
+              currentIndex: widget.navigationShell.currentIndex,
+              onTap: (index) => widget.navigationShell.goBranch(
                 index,
-                initialLocation: index == navigationShell.currentIndex,
+                initialLocation: index == widget.navigationShell.currentIndex,
               ),
               tabs: _tabs,
             )

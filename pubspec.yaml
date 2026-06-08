@@ -89,3 +89,4 @@ flutter:
 
   assets:
     - assets/logo.png
+    - assets/audio/phone_ringtone.wav
