@@ -8,6 +8,28 @@ import '../../core/network/tts_api_client.dart';
 import '../../core/storage/local_storage.dart';
 import '../../core/storage/secure_storage.dart';
 
+/// ASR 提供商选项
+const _asrProviders = [
+  {
+    'value': 'system',
+    'title': '系统默认',
+    'subtitle': '使用后端内置的语音识别服务',
+    'icon': Icons.dns_outlined,
+  },
+  {
+    'value': 'mimo',
+    'title': 'Xiaomi MiMo',
+    'subtitle': '小米云端 ASR 服务（mimo-v2.5-asr）',
+    'icon': Icons.auto_awesome_rounded,
+  },
+  {
+    'value': 'custom',
+    'title': '自定义接入',
+    'subtitle': '接入第三方 ASR 服务（OpenAI Whisper API 格式）',
+    'icon': Icons.cloud_queue_rounded,
+  },
+];
+
 /// 设置页
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -210,6 +232,60 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           isDark: isDark,
                           onTap: () => _showTtsProfilesDialog(context, isDark),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    // ASR 语音识别
+                    _buildSection(
+                      context,
+                      title: '语音识别 (ASR)',
+                      icon: Icons.mic_outlined,
+                      iconColor: const Color(0xFF009688),
+                      isDark: isDark,
+                      children: [
+                        _buildMenuItem(
+                          context,
+                          icon: Icons.settings_input_antenna_outlined,
+                          iconColor: const Color(0xFF009688),
+                          title: 'ASR 服务商',
+                          subtitle: _asrProviderSubtitle(),
+                          isDark: isDark,
+                          onTap: () => _showAsrProviderDialog(context, isDark),
+                        ),
+                        if (LocalStorage.asrProviderType != 'system') ...[
+                          _buildMenuDivider(context, isDark),
+                          _buildMenuItem(
+                            context,
+                            icon: Icons.dns_outlined,
+                            iconColor: const Color(0xFF00BCD4),
+                            title: '服务器地址',
+                            subtitle: LocalStorage.asrBaseUrl ?? '未配置',
+                            isDark: isDark,
+                            onTap: () => _showAsrUrlDialog(context, isDark),
+                          ),
+                          _buildMenuDivider(context, isDark),
+                          _buildMenuItem(
+                            context,
+                            icon: Icons.vpn_key_outlined,
+                            iconColor: const Color(0xFFFF9800),
+                            title: 'API Key',
+                            subtitle: (LocalStorage.asrApiKey == null || LocalStorage.asrApiKey!.isEmpty)
+                                ? '未配置'
+                                : '已配置 (已隐藏)',
+                            isDark: isDark,
+                            onTap: () => _showAsrApiKeyDialog(context, isDark),
+                          ),
+                          _buildMenuDivider(context, isDark),
+                          _buildMenuItem(
+                            context,
+                            icon: Icons.smart_toy_outlined,
+                            iconColor: const Color(0xFF4CAF50),
+                            title: '模型名称',
+                            subtitle: LocalStorage.asrModel,
+                            isDark: isDark,
+                            onTap: () => _showAsrModelDialog(context, isDark),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -2227,6 +2303,568 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                   },
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==================== ASR 语音识别 ====================
+
+  String _asrProviderSubtitle() {
+    switch (LocalStorage.asrProviderType) {
+      case 'mimo':
+        return 'Xiaomi MiMo (云端)';
+      case 'custom':
+        return '自定义接入 (Whisper API)';
+      default:
+        return '系统默认';
+    }
+  }
+
+  /// ASR 提供商选择弹窗
+  void _showAsrProviderDialog(BuildContext context, bool isDark) {
+    final current = LocalStorage.asrProviderType;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              '选择 ASR 服务商',
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ...List.generate(_asrProviders.length, (i) {
+              final p = _asrProviders[i];
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: i < _asrProviders.length - 1 ? 12 : 0,
+                ),
+                child: _buildAsrProviderOption(
+                  context,
+                  icon: p['icon'] as IconData,
+                  title: p['title'] as String,
+                  subtitle: p['subtitle'] as String,
+                  value: p['value'] as String,
+                  isSelected: current == p['value'],
+                  isDark: isDark,
+                ),
+              );
+            }),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAsrProviderOption(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String value,
+    required bool isSelected,
+    required bool isDark,
+  }) {
+    return GestureDetector(
+      onTap: () async {
+        HapticFeedback.lightImpact();
+        await LocalStorage.setAsrProviderType(value);
+        Navigator.pop(context);
+        setState(() {});
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF009688).withOpacity(isDark ? 0.15 : 0.08)
+              : (isDark
+                  ? Colors.white.withOpacity(0.05)
+                  : Colors.grey.withOpacity(0.05)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF009688)
+                : (isDark
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.grey.withOpacity(0.2)),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFF009688).withOpacity(isDark ? 0.2 : 0.1)
+                    : (isDark
+                        ? Colors.white.withOpacity(0.08)
+                        : Colors.grey.withOpacity(0.1)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                color: isSelected
+                    ? const Color(0xFF009688)
+                    : isDark
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey[600],
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.5)
+                          : Colors.grey[600],
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(
+                Icons.check_circle_rounded,
+                color: Color(0xFF009688),
+                size: 24,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ASR 服务器地址弹窗
+  void _showAsrUrlDialog(BuildContext context, bool isDark) {
+    final controller = TextEditingController(text: LocalStorage.asrBaseUrl ?? '');
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'ASR 服务器地址',
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '填写 ASR 服务的 Base URL（不含路径）',
+                style: TextStyle(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.5)
+                      : Colors.grey[600],
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.grey.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.15)
+                        : Colors.grey.withOpacity(0.2),
+                  ),
+                ),
+                child: TextField(
+                  controller: controller,
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: LocalStorage.asrProviderType == 'mimo'
+                        ? 'https://token-plan-sgp.xiaomimimo.com/v1'
+                        : 'https://api.groq.com',
+                    hintStyle: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.3)
+                          : Colors.grey[400],
+                    ),
+                    labelText: LocalStorage.asrProviderType == 'mimo'
+                        ? 'MiMo API 地址'
+                        : 'Base URL',
+                    labelStyle: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.all(16),
+                    prefixIcon: Icon(
+                      Icons.dns_outlined,
+                      color: isDark
+                          ? Colors.white.withOpacity(0.5)
+                          : Colors.grey[500],
+                    ),
+                  ),
+                  keyboardType: TextInputType.url,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // 保存按钮
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await LocalStorage.setAsrBaseUrl(controller.text.trim());
+                    Navigator.pop(context);
+                    setState(() {});
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF009688),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    '保存',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// ASR API Key 弹窗
+  void _showAsrApiKeyDialog(BuildContext context, bool isDark) {
+    final controller = TextEditingController(text: LocalStorage.asrApiKey ?? '');
+    bool obscure = true;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'ASR API Key',
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '用于鉴权第三方 ASR 服务',
+                  style: TextStyle(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.5)
+                        : Colors.grey[600],
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.08)
+                        : Colors.grey.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.15)
+                          : Colors.grey.withOpacity(0.2),
+                    ),
+                  ),
+                  child: TextField(
+                    controller: controller,
+                    obscureText: obscure,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'sk-...',
+                      hintStyle: TextStyle(
+                        color: isDark
+                            ? Colors.white.withOpacity(0.3)
+                            : Colors.grey[400],
+                      ),
+                      labelText: 'API Key',
+                      labelStyle: TextStyle(
+                        color: isDark
+                            ? Colors.white.withOpacity(0.6)
+                            : Colors.grey[600],
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.all(16),
+                      prefixIcon: Icon(
+                        Icons.vpn_key_outlined,
+                        color: isDark
+                            ? Colors.white.withOpacity(0.5)
+                            : Colors.grey[500],
+                      ),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscure ? Icons.visibility_off : Icons.visibility,
+                          color: isDark
+                              ? Colors.white.withOpacity(0.4)
+                              : Colors.grey[500],
+                        ),
+                        onPressed: () {
+                          setSheetState(() => obscure = !obscure);
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await LocalStorage.setAsrApiKey(controller.text.trim());
+                      Navigator.pop(context);
+                      setState(() {});
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF009688),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      '保存',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// ASR 模型名称弹窗
+  void _showAsrModelDialog(BuildContext context, bool isDark) {
+    final controller = TextEditingController(text: LocalStorage.asrModel);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'ASR 模型名称',
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '指定用于语音识别的模型',
+                style: TextStyle(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.5)
+                      : Colors.grey[600],
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.grey.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.15)
+                        : Colors.grey.withOpacity(0.2),
+                  ),
+                ),
+                child: TextField(
+                  controller: controller,
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: LocalStorage.asrProviderType == 'mimo'
+                        ? 'mimo-v2.5-asr'
+                        : 'whisper-large-v3-turbo',
+                    hintStyle: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.3)
+                          : Colors.grey[400],
+                    ),
+                    labelText: '模型名称',
+                    labelStyle: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.6)
+                          : Colors.grey[600],
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.all(16),
+                    prefixIcon: Icon(
+                      Icons.smart_toy_outlined,
+                      color: isDark
+                          ? Colors.white.withOpacity(0.5)
+                          : Colors.grey[500],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await LocalStorage.setAsrModel(controller.text.trim());
+                    Navigator.pop(context);
+                    setState(() {});
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF009688),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    '保存',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
             ],
           ),
         ),

@@ -170,6 +170,40 @@ class LocalStorage {
     await _prefs.setString('tts_global_engine_$type', engine);
   }
 
+  // ==================== ASR 语音识别配置 ====================
+
+  /// ASR 提供商类型 ('system' 或 'custom')
+  static String get asrProviderType => _prefs.getString('asr_provider_type') ?? 'system';
+  static Future<void> setAsrProviderType(String type) async {
+    await _prefs.setString('asr_provider_type', type);
+  }
+
+  /// ASR 自定义服务 Base URL
+  static String? get asrBaseUrl => _prefs.getString('asr_base_url');
+  static Future<void> setAsrBaseUrl(String? url) async {
+    if (url != null && url.isNotEmpty) {
+      await _prefs.setString('asr_base_url', url);
+    } else {
+      await _prefs.remove('asr_base_url');
+    }
+  }
+
+  /// ASR API Key
+  static String? get asrApiKey => _prefs.getString('asr_api_key');
+  static Future<void> setAsrApiKey(String? key) async {
+    if (key != null && key.isNotEmpty) {
+      await _prefs.setString('asr_api_key', key);
+    } else {
+      await _prefs.remove('asr_api_key');
+    }
+  }
+
+  /// ASR 模型名称
+  static String get asrModel => _prefs.getString('asr_model') ?? 'whisper-large-v3-turbo';
+  static Future<void> setAsrModel(String model) async {
+    await _prefs.setString('asr_model', model);
+  }
+
   // ==================== 通用方法 ====================
 
   /// 获取字符串

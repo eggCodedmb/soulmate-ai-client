@@ -10,6 +10,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
+import '../../core/network/asr_api_client.dart';
+import '../../core/storage/local_storage.dart';
 import '../../core/storage/message_local_storage.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/companion.dart';
@@ -1301,10 +1303,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     setState(() => _isTranscribing = true);
 
     try {
-      final apiService = ref.read(apiServiceProvider);
+      // 根据 ASR 配置选择识别服务
+      final String transcribedText;
 
-      // 1. 上传音频到 ASR 服务进行语音识别
-      final transcribedText = await apiService.transcribeAudio(audioPath);
+      if (LocalStorage.asrProviderType == 'custom') {
+        // 自定义接入商（OpenAI Whisper API 格式）
+        final asrClient = AsrApiClient();
+        transcribedText = await asrClient.transcribe(audioPath);
+      } else {
+        // 系统默认（后端内置 ASR）
+        final apiService = ref.read(apiServiceProvider);
+        transcribedText = await apiService.transcribeAudio(audioPath);
+      }
 
       if (!mounted) return;
 
