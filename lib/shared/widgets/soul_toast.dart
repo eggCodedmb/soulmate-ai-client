@@ -13,6 +13,7 @@ enum SoulToastType {
 /// Toast 显示位置
 enum SoulToastPosition {
   top,
+  center,
   bottom,
 }
 
@@ -20,12 +21,14 @@ enum SoulToastPosition {
 class SoulToast {
   SoulToast._();
 
+  static OverlayEntry? _currentEntry;
+
   /// 显示 Toast
   static void show(
     BuildContext context, {
     required String message,
     SoulToastType type = SoulToastType.info,
-    SoulToastPosition position = SoulToastPosition.top,
+    SoulToastPosition position = SoulToastPosition.center,
     Duration duration = const Duration(seconds: 2),
     String? actionLabel,
     VoidCallback? onAction,
@@ -35,42 +38,35 @@ class SoulToast {
 
     HapticFeedback.lightImpact();
 
-    final snackBar = SnackBar(
-      content: _ToastContent(
+    // 移除上一条还在显示的 toast
+    _currentEntry?.remove();
+    _currentEntry = null;
+
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _ToastOverlay(
         message: message,
         icon: config.icon,
         color: config.color,
         isDark: isDark,
+        position: position,
+        duration: duration,
+        onDismissed: () {
+          entry.remove();
+          if (_currentEntry == entry) _currentEntry = null;
+        },
       ),
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      behavior: SnackBarBehavior.floating,
-      duration: duration,
-      margin: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: position == SoulToastPosition.top ? 50 : 0,
-        bottom: position == SoulToastPosition.bottom ? 50 : 0,
-      ),
-      action: actionLabel != null
-          ? SnackBarAction(
-              label: actionLabel,
-              textColor: config.color,
-              onPressed: onAction ?? () {},
-            )
-          : null,
     );
 
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(snackBar);
+    _currentEntry = entry;
+    Overlay.of(context).insert(entry);
   }
 
   /// 快捷方法
   static void success(
     BuildContext context,
     String message, {
-    SoulToastPosition position = SoulToastPosition.top,
+    SoulToastPosition position = SoulToastPosition.center,
   }) {
     show(context, message: message, type: SoulToastType.success, position: position);
   }
@@ -78,7 +74,7 @@ class SoulToast {
   static void error(
     BuildContext context,
     String message, {
-    SoulToastPosition position = SoulToastPosition.top,
+    SoulToastPosition position = SoulToastPosition.center,
   }) {
     show(context, message: message, type: SoulToastType.error, position: position);
   }
@@ -86,7 +82,7 @@ class SoulToast {
   static void warning(
     BuildContext context,
     String message, {
-    SoulToastPosition position = SoulToastPosition.top,
+    SoulToastPosition position = SoulToastPosition.center,
   }) {
     show(context, message: message, type: SoulToastType.warning, position: position);
   }
@@ -94,7 +90,7 @@ class SoulToast {
   static void info(
     BuildContext context,
     String message, {
-    SoulToastPosition position = SoulToastPosition.top,
+    SoulToastPosition position = SoulToastPosition.center,
   }) {
     show(context, message: message, type: SoulToastType.info, position: position);
   }
@@ -132,67 +128,158 @@ class _ToastConfig {
   const _ToastConfig({required this.icon, required this.color});
 }
 
-class _ToastContent extends StatelessWidget {
+/// 基于 Overlay 的 Toast，支持屏幕居中显示
+class _ToastOverlay extends StatefulWidget {
   final String message;
   final IconData icon;
   final Color color;
   final bool isDark;
+  final SoulToastPosition position;
+  final Duration duration;
+  final VoidCallback onDismissed;
 
-  const _ToastContent({
+  const _ToastOverlay({
     required this.message,
     required this.icon,
     required this.color,
     required this.isDark,
+    required this.position,
+    required this.duration,
+    required this.onDismissed,
   });
 
   @override
+  State<_ToastOverlay> createState() => _ToastOverlayState();
+}
+
+class _ToastOverlayState extends State<_ToastOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      // 停留时长 + 淡出 200ms
+      duration: widget.duration + const Duration(milliseconds: 200),
+      vsync: this,
+    );
+
+    // 前 duration 时间保持 1.0，最后 200ms 从 1.0 → 0.0
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        widget.onDismissed();
+      }
+    });
+
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: color.withValues(alpha: 0.2),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-          BoxShadow(
-            color: color.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+    final fadeOutStart =
+        widget.duration.inMilliseconds / _controller.duration!.inMilliseconds;
+
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          // 前 fadeOutStart 段保持 opacity=1，之后淡出
+          final opacity = _controller.value > fadeOutStart
+              ? 1.0 - ((_controller.value - fadeOutStart) / (1.0 - fadeOutStart))
+              : 1.0;
+          // 弹入时的缩放：前 10% 从 0.85 → 1.0
+          final scale = _controller.value < 0.1
+              ? 0.85 + 0.15 * (_controller.value / 0.1)
+              : 1.0;
+
+          return Positioned.fill(
+            child: Align(
+              alignment: _getAlignment(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Opacity(
+                  opacity: opacity.clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: scale,
+                    child: child,
+                  ),
+                ),
               ),
             ),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          decoration: BoxDecoration(
+            color: widget.isDark
+                ? const Color(0xFF2C2C2E).withValues(alpha: 0.95)
+                : Colors.white.withValues(alpha: 0.97),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: widget.color.withValues(alpha: 0.2),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black
+                    .withValues(alpha: widget.isDark ? 0.35 : 0.1),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+              BoxShadow(
+                color: widget.color.withValues(alpha: 0.12),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: widget.color.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(widget.icon, color: widget.color, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  widget.message,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: widget.isDark
+                        ? Colors.white
+                        : const Color(0xFF1A1A2E),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  Alignment _getAlignment() {
+    switch (widget.position) {
+      case SoulToastPosition.top:
+        return Alignment.topCenter;
+      case SoulToastPosition.center:
+        return Alignment.center;
+      case SoulToastPosition.bottom:
+        return Alignment.bottomCenter;
+    }
   }
 }

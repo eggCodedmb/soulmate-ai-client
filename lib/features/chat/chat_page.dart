@@ -10,12 +10,15 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
+import '../../core/storage/message_local_storage.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/companion.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/tts_config.dart';
+import '../../shared/widgets/soul_toast.dart';
 import 'tts_audio_service.dart';
 import 'tts_provider.dart';
+import 'voice_recorder_widget.dart';
 
 /// 聊天详情页
 class ChatPage extends ConsumerStatefulWidget {
@@ -36,6 +39,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _isStreaming = false;
   bool _isLoading = true;
   bool _hasText = false;
+  bool _isVoiceMode = false;
+  bool _isTranscribing = false;
   CancelToken? _streamCancelToken;
   int _currentPage = 1;
   bool _hasMore = true;
@@ -86,7 +91,23 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _loadMessages() async {
     try {
       final apiService = ref.read(apiServiceProvider);
+      final localStorage = MessageLocalStorage.instance;
 
+      // 先从本地加载缓存消息
+      final cachedMessages = await localStorage.getMessages(
+        _conversationId,
+        limit: 50,
+      );
+
+      if (cachedMessages.isNotEmpty && mounted) {
+        setState(() {
+          _messages.clear();
+          _messages.addAll(cachedMessages);
+          _isLoading = false;
+        });
+      }
+
+      // 从服务器获取对话信息
       final conversations = await apiService.getConversationList();
       final conv = conversations.firstWhere(
         (c) => c.id == _conversationId,
@@ -100,11 +121,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _companionPersonalities = companion.personalityKeys;
       _companionTtsConfig = companion.ttsConfig;
 
+      // 从服务器获取最新消息
       final pageResult = await apiService.getMessages(
         _conversationId,
         page: 1,
         size: 20,
       );
+
+      // 缓存到本地
+      await localStorage.cacheMessages(_conversationId, pageResult.records);
 
       if (mounted) {
         setState(() {
@@ -118,10 +143,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     } catch (e) {
       debugPrint('加载消息失败: $e');
       if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载消息失败: $e')),
-        );
+        // 如果本地已有消息，不显示错误
+        if (_messages.isEmpty) {
+          setState(() => _isLoading = false);
+          SoulToast.error(context, '加载消息失败，请检查网络');
+        } else {
+          SoulToast.info(context, '显示缓存消息');
+        }
       }
     }
   }
@@ -176,9 +204,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         if (chatResponse.error != null && chatResponse.error!.isNotEmpty) {
           hasError = true;
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(chatResponse.error!)),
-            );
+            SoulToast.error(context, chatResponse.error!);
           }
           break;
         }
@@ -206,9 +232,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       debugPrint('流式消息异常: $e');
       hasError = true;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('发送失败: $e')),
-        );
+        SoulToast.error(context, '发送失败');
       }
     }
 
@@ -236,11 +260,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _refreshMessages() async {
     try {
       final apiService = ref.read(apiServiceProvider);
+      final localStorage = MessageLocalStorage.instance;
+
       final pageResult = await apiService.getMessages(
         _conversationId,
         page: 1,
         size: 20,
       );
+
+      // 缓存到本地
+      await localStorage.cacheMessages(_conversationId, pageResult.records);
+
       if (mounted) {
         setState(() {
           _messages.clear();
@@ -261,11 +291,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     try {
       final apiService = ref.read(apiServiceProvider);
+      final localStorage = MessageLocalStorage.instance;
+
       final pageResult = await apiService.getMessages(
         _conversationId,
         page: _currentPage + 1,
         size: 20,
       );
+
+      // 缓存到本地
+      await localStorage.cacheMessages(_conversationId, pageResult.records);
+
       if (mounted) {
         setState(() {
           _messages.addAll(pageResult.records);
@@ -1128,54 +1164,25 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
+              // 左侧：文本输入 或 语音按钮（带动画切换）
               Expanded(
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: 44),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? const Color(0xFF1C1C1E)
-                        : const Color(0xFFF2F3F8),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: TextField(
-                    controller: _messageController,
-                    focusNode: _inputFocusNode,
-                    maxLines: 5,
-                    minLines: 1,
-                    textInputAction: TextInputAction.newline,
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-                    ),
-                    decoration: InputDecoration(
-                      hintText: '输入消息...',
-                      hintStyle: TextStyle(
-                        fontSize: 15,
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.25)
-                            : Colors.black.withValues(alpha: 0.2),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 280),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeOutCubic,
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SizeTransition(
+                        sizeFactor: animation,
+                        axis: Axis.horizontal,
+                        child: child,
                       ),
-                      filled: true,
-                      fillColor: Colors.transparent,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 12,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(22),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(22),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(22),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                    onSubmitted: (_) => _sendMessage(),
-                  ),
+                    );
+                  },
+                  child: _isVoiceMode
+                      ? _buildVoiceRecorder(isDark)
+                      : _buildTextField(isDark),
                 ),
               ),
               const SizedBox(width: 10),
@@ -1185,6 +1192,151 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         ),
       ),
     );
+  }
+
+  /// 文本输入框
+  Widget _buildTextField(bool isDark) {
+    return Container(
+      key: const ValueKey('textfield'),
+      constraints: const BoxConstraints(minHeight: 44),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F3F8),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: TextField(
+        controller: _messageController,
+        focusNode: _inputFocusNode,
+        maxLines: 5,
+        minLines: 1,
+        textInputAction: TextInputAction.newline,
+        style: TextStyle(
+          fontSize: 15,
+          color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+        ),
+        decoration: InputDecoration(
+          hintText: '输入消息...',
+          hintStyle: TextStyle(
+            fontSize: 15,
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.25)
+                : Colors.black.withValues(alpha: 0.2),
+          ),
+          filled: true,
+          fillColor: Colors.transparent,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 12,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(22),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(22),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(22),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        onSubmitted: (_) => _sendMessage(),
+      ),
+    );
+  }
+
+  /// 语音录制组件
+  Widget _buildVoiceRecorder(bool isDark) {
+    // ASR 识别中：显示加载状态
+    if (_isTranscribing) {
+      return Container(
+        key: const ValueKey('transcribing'),
+        height: 48,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F3F8),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.brandPink.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '语音识别中...',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.5)
+                      : Colors.black.withValues(alpha: 0.4),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return VoiceRecorderWidget(
+      key: const ValueKey('voicerecorder'),
+      onSend: _onVoiceSend,
+      onCancel: () {
+        // 取消录音，不做任何操作
+      },
+    );
+  }
+
+  /// 语音发送回调：录音完成 → ASR 识别 → 发送消息
+  Future<void> _onVoiceSend(String audioPath, int durationMs) async {
+    if (_companionId == null || _isStreaming) return;
+
+    setState(() => _isTranscribing = true);
+
+    try {
+      final apiService = ref.read(apiServiceProvider);
+
+      // 1. 上传音频到 ASR 服务进行语音识别
+      final transcribedText = await apiService.transcribeAudio(audioPath);
+
+      if (!mounted) return;
+
+      if (transcribedText.isEmpty) {
+        SoulToast.error(context, '语音识别失败，未识别出文字');
+        setState(() => _isTranscribing = false);
+        return;
+      }
+
+      // 2. 将识别出的文字填入输入框，用户可编辑后发送
+      _messageController.text = transcribedText;
+      setState(() {
+        _hasText = true;
+        _isTranscribing = false;
+        _isVoiceMode = false; // 切回文本模式，方便用户确认
+      });
+      _inputFocusNode.requestFocus();
+
+      SoulToast.success(context, '语音识别完成');
+    } on ApiException catch (e) {
+      debugPrint('ASR 接口异常: $e');
+      if (mounted) {
+        SoulToast.error(context, e.message);
+        setState(() => _isTranscribing = false);
+      }
+    } on Exception catch (e) {
+      debugPrint('语音识别失败: $e');
+      if (mounted) {
+        SoulToast.error(context, '语音识别失败，请重试');
+        setState(() => _isTranscribing = false);
+      }
+    }
   }
 
   Widget _buildSendButton(bool isDark) {
@@ -1214,8 +1366,54 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       );
     }
 
+    // 有文本时：显示发送按钮
+    if (_hasText) {
+      return GestureDetector(
+        onTap: _sendMessage,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppColors.brandPink, Color(0xFFFF8FA8)],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.brandPink.withValues(alpha: 0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.arrow_upward_rounded,
+            size: 22,
+            color: Colors.white,
+          ),
+        ),
+      );
+    }
+
+    // 无文本时：显示麦克风/键盘切换按钮
     return GestureDetector(
-      onTap: _hasText ? _sendMessage : null,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        setState(() {
+          _isVoiceMode = !_isVoiceMode;
+          if (!_isVoiceMode) {
+            // 切回文本模式时，自动聚焦输入框
+            _inputFocusNode.requestFocus();
+          } else {
+            // 切到语音模式时，取消焦点
+            _inputFocusNode.unfocus();
+          }
+        });
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeInOut,
@@ -1223,36 +1421,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         height: 44,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: _hasText
-              ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.brandPink, Color(0xFFFF8FA8)],
-                )
-              : null,
-          color: _hasText
-              ? null
+          color: _isVoiceMode
+              ? AppColors.brandPink.withValues(alpha: 0.12)
               : isDark
                   ? const Color(0xFF1C1C1E)
                   : const Color(0xFFF2F3F8),
-          boxShadow: _hasText
-              ? [
-                  BoxShadow(
-                    color: AppColors.brandPink.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
         ),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
           child: Icon(
-            _hasText ? Icons.arrow_upward_rounded : Icons.mic_rounded,
-            key: ValueKey(_hasText),
+            _isVoiceMode ? Icons.keyboard_rounded : Icons.mic_rounded,
+            key: ValueKey(_isVoiceMode),
             size: 22,
-            color: _hasText
-                ? Colors.white
+            color: _isVoiceMode
+                ? AppColors.brandPink
                 : isDark
                     ? Colors.white.withValues(alpha: 0.25)
                     : Colors.black.withValues(alpha: 0.2),
@@ -1357,9 +1539,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 onTap: () {
                   Navigator.pop(context);
                   Clipboard.setData(ClipboardData(text: message.content));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已复制到剪贴板')),
-                  );
+                  SoulToast.success(context, '已复制到剪贴板');
                 },
               ),
               if (message.senderType == 'user')

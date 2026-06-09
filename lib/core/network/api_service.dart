@@ -354,6 +354,21 @@ class ApiService {
     return PaymentOrder.fromJson(_unwrap(response) as Map<String, dynamic>);
   }
 
+  // ==================== ASR 语音识别模块 ====================
+
+  /// 语音转文字
+  ///
+  /// 上传音频文件到 ASR 服务，返回识别出的文字。
+  /// 支持格式：WAV, MP3, M4A, WEBM, OGG, FLAC（最大 25MB）
+  Future<String> transcribeAudio(String audioFilePath) async {
+    final formData = FormData.fromMap({
+      'audio': await MultipartFile.fromFile(audioFilePath),
+    });
+    final response = await _dio.post('/api/asr/transcribe', data: formData);
+    final data = _unwrap(response);
+    return data as String? ?? '';
+  }
+
   // ==================== 文件上传模块 ====================
 
   /// 单文件上传
