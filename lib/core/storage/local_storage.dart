@@ -64,9 +64,47 @@ class LocalStorage {
     await _prefs.setBool('proactive_care', value);
   }
 
-  // ==================== 模型配置 ====================
+  // ==================== LLM 模型配置 ====================
 
-  /// 模型Base URL
+  /// LLM 提供商类型 ('system' | 'openai' | 'ollama')
+  static String get llmProviderType => _prefs.getString('llm_provider_type') ?? 'system';
+  static Future<void> setLlmProviderType(String type) async {
+    await _prefs.setString('llm_provider_type', type);
+  }
+
+  /// LLM Base URL（OpenAI/Ollama 使用）
+  static String? get llmBaseUrl => _prefs.getString('llm_base_url');
+  static Future<void> setLlmBaseUrl(String? url) async {
+    if (url != null && url.isNotEmpty) {
+      await _prefs.setString('llm_base_url', url);
+    } else {
+      await _prefs.remove('llm_base_url');
+    }
+  }
+
+  /// LLM API Key（OpenAI 协议云端模型使用）
+  static String? get llmApiKey => _prefs.getString('llm_api_key');
+  static Future<void> setLlmApiKey(String? key) async {
+    if (key != null && key.isNotEmpty) {
+      await _prefs.setString('llm_api_key', key);
+    } else {
+      await _prefs.remove('llm_api_key');
+    }
+  }
+
+  /// LLM 模型名称（如 gpt-4o、deepseek-chat、qwen2.5 等）
+  static String? get llmModel => _prefs.getString('llm_model');
+  static Future<void> setLlmModel(String? model) async {
+    if (model != null && model.isNotEmpty) {
+      await _prefs.setString('llm_model', model);
+    } else {
+      await _prefs.remove('llm_model');
+    }
+  }
+
+  // ==================== 模型配置（旧版兼容） ====================
+
+  /// @deprecated 使用 llmBaseUrl 代替
   static String? get modelBaseUrl => _prefs.getString('model_base_url');
   static Future<void> setModelBaseUrl(String? url) async {
     if (url != null) {
@@ -76,7 +114,7 @@ class LocalStorage {
     }
   }
 
-  /// 模型名称
+  /// @deprecated 使用 llmModel 代替
   static String? get modelName => _prefs.getString('model_name');
   static Future<void> setModelName(String? name) async {
     if (name != null) {

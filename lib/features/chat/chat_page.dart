@@ -200,6 +200,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           conversationId: _conversationId,
           companionId: _companionId!,
           content: content,
+          llmProviderType: LocalStorage.llmProviderType != 'system' ? LocalStorage.llmProviderType : null,
+          llmBaseUrl: LocalStorage.llmProviderType != 'system' ? LocalStorage.llmBaseUrl : null,
+          llmApiKey: (LocalStorage.llmProviderType != 'system' && (LocalStorage.llmApiKey?.isNotEmpty ?? false)) ? LocalStorage.llmApiKey : null,
+          llmModel: LocalStorage.llmProviderType != 'system' ? LocalStorage.llmModel : null,
         ),
         cancelToken: _streamCancelToken,
       )) {

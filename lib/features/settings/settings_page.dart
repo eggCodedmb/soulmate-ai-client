@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,6 +27,22 @@ const _asrProviders = [
     'value': 'custom',
     'title': '自定义接入',
     'subtitle': '接入第三方 ASR 服务（OpenAI Whisper API 格式）',
+    'icon': Icons.cloud_queue_rounded,
+  },
+];
+
+/// LLM 模型提供商选项
+const _llmProviders = [
+  {
+    'value': 'system',
+    'title': '系统默认',
+    'subtitle': '使用后端内置的 AI 模型（推荐）',
+    'icon': Icons.dns_outlined,
+  },
+  {
+    'value': 'openai',
+    'title': 'OpenAI 协议',
+    'subtitle': '兼容 OpenAI API 的云端或本地模型（如 Ollama、DeepSeek 等）',
     'icon': Icons.cloud_queue_rounded,
   },
 ];
@@ -131,7 +148,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                       ],
                     ),
                     const SizedBox(height: 20),
-                    // 模型配置
+                    // LLM 模型配置
                     _buildSection(
                       context,
                       title: '模型配置',
@@ -143,23 +160,45 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           context,
                           icon: Icons.psychology_outlined,
                           iconColor: const Color(0xFFE91E63),
-                          title: '当前模型',
-                          subtitle: LocalStorage.modelName ?? 'GPT-4o',
+                          title: '模型服务商',
+                          subtitle: _llmProviderSubtitle(),
                           isDark: isDark,
-                          onTap: () {
-                            // TODO: 切换模型
-                          },
+                          onTap: () => _showLlmProviderDialog(context, isDark),
                         ),
-                        _buildMenuDivider(context, isDark),
-                        _buildMenuItem(
-                          context,
-                          icon: Icons.link_outlined,
-                          iconColor: const Color(0xFF00BCD4),
-                          title: '本地模型地址',
-                          subtitle: LocalStorage.modelBaseUrl ?? '未配置',
-                          isDark: isDark,
-                          onTap: () => _showModelUrlDialog(context, isDark),
-                        ),
+                        if (LocalStorage.llmProviderType != 'system') ...[
+                          _buildMenuDivider(context, isDark),
+                          _buildMenuItem(
+                            context,
+                            icon: Icons.link_outlined,
+                            iconColor: const Color(0xFF00BCD4),
+                            title: '服务器地址',
+                            subtitle: LocalStorage.llmBaseUrl ?? '未配置',
+                            isDark: isDark,
+                            onTap: () => _showLlmUrlDialog(context, isDark),
+                          ),
+                          _buildMenuDivider(context, isDark),
+                          _buildMenuItem(
+                            context,
+                            icon: Icons.vpn_key_outlined,
+                            iconColor: const Color(0xFFFF9800),
+                            title: 'API Key',
+                            subtitle: (LocalStorage.llmApiKey == null || LocalStorage.llmApiKey!.isEmpty)
+                                ? '未配置（本地模型可留空）'
+                                : '已配置 (已隐藏)',
+                            isDark: isDark,
+                            onTap: () => _showLlmApiKeyDialog(context, isDark),
+                          ),
+                          _buildMenuDivider(context, isDark),
+                          _buildMenuItem(
+                            context,
+                            icon: Icons.smart_toy_outlined,
+                            iconColor: const Color(0xFF4CAF50),
+                            title: '模型名称',
+                            subtitle: LocalStorage.llmModel ?? '未配置',
+                            isDark: isDark,
+                            onTap: () => _showLlmModelDialog(context, isDark),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -652,6 +691,70 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
     );
   }
 
+  /// 现代化输入框（统一样式）
+  Widget _buildModernTextField({
+    required TextEditingController controller,
+    required bool isDark,
+    required String labelText,
+    required String hintText,
+    required IconData prefixIcon,
+    bool obscureText = false,
+    TextInputType? keyboardType,
+    Widget? suffixIcon,
+  }) {
+    return TextField(
+      controller: controller,
+      style: TextStyle(
+        color: isDark ? Colors.white : Colors.black,
+        fontSize: 15,
+      ),
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: labelText,
+        labelStyle: TextStyle(
+          color: isDark ? Colors.white.withOpacity(0.5) : Colors.grey[600],
+          fontSize: 14,
+        ),
+        hintText: hintText,
+        hintStyle: TextStyle(
+          color: isDark ? Colors.white.withOpacity(0.25) : Colors.grey[400],
+          fontSize: 14,
+        ),
+        prefixIcon: Icon(
+          prefixIcon,
+          color: isDark ? Colors.white.withOpacity(0.4) : Colors.grey[500],
+          size: 20,
+        ),
+        suffixIcon: suffixIcon,
+        filled: true,
+        fillColor: isDark
+            ? Colors.white.withOpacity(0.06)
+            : Colors.grey.withOpacity(0.08),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: isDark ? Colors.white.withOpacity(0.1) : Colors.grey.withOpacity(0.2),
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: isDark ? Colors.white.withOpacity(0.1) : Colors.grey.withOpacity(0.2),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: isDark ? Colors.white.withOpacity(0.3) : Colors.grey.withOpacity(0.5),
+            width: 1.5,
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 退出登录按钮
   Widget _buildLogoutButton(BuildContext context, bool isDark) {
     return Container(
@@ -870,8 +973,349 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   }
 
   /// 模型地址弹窗
-  void _showModelUrlDialog(BuildContext context, bool isDark) {
-    final controller = TextEditingController(text: LocalStorage.modelBaseUrl);
+  // ==================== LLM 模型配置 ====================
+
+  String _llmProviderSubtitle() {
+    switch (LocalStorage.llmProviderType) {
+      case 'openai':
+        return 'OpenAI 协议';
+      default:
+        return '系统默认';
+    }
+  }
+
+  /// LLM 提供商选择弹窗
+  void _showLlmProviderDialog(BuildContext context, bool isDark) {
+    final current = LocalStorage.llmProviderType;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withOpacity(0.3)
+                    : Colors.grey.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              '选择模型服务商',
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ...List.generate(_llmProviders.length, (i) {
+              final p = _llmProviders[i];
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: i < _llmProviders.length - 1 ? 12 : 0,
+                ),
+                child: _buildLlmProviderOption(
+                  context,
+                  icon: p['icon'] as IconData,
+                  title: p['title'] as String,
+                  subtitle: p['subtitle'] as String,
+                  value: p['value'] as String,
+                  isSelected: current == p['value'],
+                  isDark: isDark,
+                ),
+              );
+            }),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLlmProviderOption(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String value,
+    required bool isSelected,
+    required bool isDark,
+  }) {
+    return GestureDetector(
+      onTap: () async {
+        HapticFeedback.lightImpact();
+        await LocalStorage.setLlmProviderType(value);
+        Navigator.pop(context);
+        setState(() {});
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFFFF9800).withOpacity(isDark ? 0.15 : 0.08)
+              : (isDark
+                  ? Colors.white.withOpacity(0.05)
+                  : Colors.grey.withOpacity(0.05)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFFFF9800)
+                : (isDark
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.grey.withOpacity(0.2)),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFFFF9800).withOpacity(isDark ? 0.2 : 0.1)
+                    : (isDark
+                        ? Colors.white.withOpacity(0.08)
+                        : Colors.grey.withOpacity(0.1)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                color: isSelected
+                    ? const Color(0xFFFF9800)
+                    : isDark
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.grey[600],
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.5)
+                          : Colors.grey[600],
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(
+                Icons.check_circle_rounded,
+                color: Color(0xFFFF9800),
+                size: 24,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// LLM 服务器地址弹窗
+  void _showLlmUrlDialog(BuildContext context, bool isDark) {
+    final controller = TextEditingController(text: LocalStorage.llmBaseUrl ?? '');
+    bool isTesting = false;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.3)
+                        : Colors.grey.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  '服务器地址',
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '填写 OpenAI 兼容 API 的 Base URL',
+                  style: TextStyle(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.5)
+                        : Colors.grey[600],
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _buildModernTextField(
+                  controller: controller,
+                  isDark: isDark,
+                  labelText: 'Base URL',
+                  hintText: 'https://api.openai.com/v1 或 http://localhost:11434/v1',
+                  prefixIcon: Icons.link_rounded,
+                  keyboardType: TextInputType.url,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 56,
+                        child: TextButton(
+                          onPressed: isTesting
+                              ? null
+                              : () async {
+                                  final url = controller.text.trim();
+                                  if (url.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('请先填写服务器地址')),
+                                    );
+                                    return;
+                                  }
+                                  setSheetState(() => isTesting = true);
+                                  final ok = await _testLlmConnection(url);
+                                  setSheetState(() => isTesting = false);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(ok ? '连接成功 ✓' : '连接失败，请检查地址'),
+                                        backgroundColor: ok ? const Color(0xFF4CAF50) : const Color(0xFFE53935),
+                                      ),
+                                    );
+                                  }
+                                },
+                          style: TextButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(
+                                color: isDark
+                                    ? Colors.white.withOpacity(0.2)
+                                    : Colors.grey.withOpacity(0.3),
+                              ),
+                            ),
+                          ),
+                          child: isTesting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : Text(
+                                  '测试连接',
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? Colors.white.withOpacity(0.7)
+                                        : Colors.grey[700],
+                                    fontSize: 16,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: SizedBox(
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            LocalStorage.setLlmBaseUrl(controller.text.trim());
+                            Navigator.pop(context);
+                            setState(() {});
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.brandPink,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            '保存',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 测试 LLM 服务器连接
+  Future<bool> _testLlmConnection(String baseUrl) async {
+    try {
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ));
+      // 去掉尾部斜杠
+      final url = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+      // OpenAI 协议: GET /models 获取模型列表（Ollama 也兼容此端点）
+      await dio.get<dynamic>('$url/models');
+      return true;
+    } on Object catch (e) {
+      debugPrint('[LLM] 测试连接失败: $e');
+      return false;
+    }
+  }
+
+  /// LLM API Key 弹窗
+  void _showLlmApiKeyDialog(BuildContext context, bool isDark) {
+    final controller = TextEditingController(text: LocalStorage.llmApiKey ?? '');
 
     showModalBottomSheet(
       context: context,
@@ -890,7 +1334,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 拖拽指示器
               Container(
                 width: 40,
                 height: 4,
@@ -903,59 +1346,33 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
               ),
               const SizedBox(height: 24),
               Text(
-                '本地模型地址',
+                'API Key',
                 style: TextStyle(
                   color: isDark ? Colors.white : Colors.black,
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: 24),
-              // 输入框
-              Container(
-                decoration: BoxDecoration(
+              const SizedBox(height: 8),
+              Text(
+                '用于鉴权 OpenAI 协议云端模型服务',
+                style: TextStyle(
                   color: isDark
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.grey.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withOpacity(0.15)
-                        : Colors.grey.withOpacity(0.2),
-                  ),
-                ),
-                child: TextField(
-                  controller: controller,
-                  style: TextStyle(
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'http://localhost:1234/v1',
-                    hintStyle: TextStyle(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.3)
-                          : Colors.grey[400],
-                    ),
-                    labelText: '模型地址',
-                    labelStyle: TextStyle(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.6)
-                          : Colors.grey[600],
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.all(16),
-                    prefixIcon: Icon(
-                      Icons.link_rounded,
-                      color: isDark
-                          ? Colors.white.withOpacity(0.5)
-                          : Colors.grey[500],
-                    ),
-                  ),
-                  keyboardType: TextInputType.url,
+                      ? Colors.white.withOpacity(0.5)
+                      : Colors.grey[600],
+                  fontSize: 14,
                 ),
               ),
               const SizedBox(height: 24),
-              // 按钮
+              _buildModernTextField(
+                controller: controller,
+                isDark: isDark,
+                labelText: 'API Key',
+                hintText: 'sk-...',
+                prefixIcon: Icons.vpn_key_outlined,
+                obscureText: true,
+              ),
+              const SizedBox(height: 24),
               Row(
                 children: [
                   Expanded(
@@ -991,7 +1408,133 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                       height: 56,
                       child: ElevatedButton(
                         onPressed: () {
-                          LocalStorage.setModelBaseUrl(controller.text);
+                          LocalStorage.setLlmApiKey(controller.text);
+                          Navigator.pop(context);
+                          setState(() {});
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.brandPink,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          '保存',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// LLM 模型名称弹窗
+  void _showLlmModelDialog(BuildContext context, bool isDark) {
+    final controller = TextEditingController(text: LocalStorage.llmModel ?? '');
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.3)
+                      : Colors.grey.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                '模型名称',
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '填写模型名称（如 gpt-4o、deepseek-chat、qwen2.5:7b）',
+                style: TextStyle(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.5)
+                      : Colors.grey[600],
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 24),
+              _buildModernTextField(
+                controller: controller,
+                isDark: isDark,
+                labelText: '模型名称',
+                hintText: 'gpt-4o / deepseek-chat / qwen2.5:7b',
+                prefixIcon: Icons.smart_toy_outlined,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 56,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.2)
+                                  : Colors.grey.withOpacity(0.3),
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          '取消',
+                          style: TextStyle(
+                            color: isDark
+                                ? Colors.white.withOpacity(0.7)
+                                : Colors.grey[700],
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: SizedBox(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          LocalStorage.setLlmModel(controller.text);
                           Navigator.pop(context);
                           setState(() {});
                         },
@@ -1582,47 +2125,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 ),
               ),
               const SizedBox(height: 24),
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.grey.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withOpacity(0.15)
-                        : Colors.grey.withOpacity(0.2),
-                  ),
-                ),
-                child: TextField(
-                  controller: controller,
-                  style: TextStyle(
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '输入您的 API Key',
-                    hintStyle: TextStyle(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.3)
-                          : Colors.grey[400],
-                    ),
-                    labelText: 'API Key',
-                    labelStyle: TextStyle(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.6)
-                          : Colors.grey[600],
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.all(16),
-                    prefixIcon: Icon(
-                      Icons.vpn_key_outlined,
-                      color: isDark
-                          ? Colors.white.withOpacity(0.5)
-                          : Colors.grey[500],
-                    ),
-                  ),
-                  obscureText: true,
-                ),
+              _buildModernTextField(
+                controller: controller,
+                isDark: isDark,
+                labelText: 'API Key',
+                hintText: '输入您的 API Key',
+                prefixIcon: Icons.vpn_key_outlined,
+                obscureText: true,
               ),
               const SizedBox(height: 24),
               Row(
@@ -1743,46 +2252,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 ),
               ),
               const SizedBox(height: 24),
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.grey.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withOpacity(0.15)
-                        : Colors.grey.withOpacity(0.2),
-                  ),
-                ),
-                child: TextField(
-                  controller: controller,
-                  style: TextStyle(
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'mimo-v2.5-tts',
-                    hintStyle: TextStyle(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.3)
-                          : Colors.grey[400],
-                    ),
-                    labelText: '模型名称',
-                    labelStyle: TextStyle(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.6)
-                          : Colors.grey[600],
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.all(16),
-                    prefixIcon: Icon(
-                      Icons.smart_toy_outlined,
-                      color: isDark
-                          ? Colors.white.withOpacity(0.5)
-                          : Colors.grey[500],
-                    ),
-                  ),
-                ),
+              _buildModernTextField(
+                controller: controller,
+                isDark: isDark,
+                labelText: '模型名称',
+                hintText: 'mimo-v2.5-tts',
+                prefixIcon: Icons.smart_toy_outlined,
               ),
               const SizedBox(height: 24),
               Row(
@@ -1911,49 +2386,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 ),
                 const SizedBox(height: 24),
                 // 输入框
-                Container(
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white.withOpacity(0.08)
-                        : Colors.grey.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.15)
-                          : Colors.grey.withOpacity(0.2),
-                    ),
-                  ),
-                  child: TextField(
-                    controller: controller,
-                    style: TextStyle(
-                      color: isDark ? Colors.white : Colors.black,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: LocalStorage.ttsProviderType == 'mimo'
-                          ? 'https://token-plan-sgp.xiaomimimo.com/v1'
-                          : 'http://localhost:17493',
-                      hintStyle: TextStyle(
-                        color: isDark
-                            ? Colors.white.withOpacity(0.3)
-                            : Colors.grey[400],
-                      ),
-                      labelText: 'TTS 服务地址',
-                      labelStyle: TextStyle(
-                        color: isDark
-                            ? Colors.white.withOpacity(0.6)
-                            : Colors.grey[600],
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.all(16),
-                      prefixIcon: Icon(
-                        Icons.dns_outlined,
-                        color: isDark
-                            ? Colors.white.withOpacity(0.5)
-                            : Colors.grey[500],
-                      ),
-                    ),
-                    keyboardType: TextInputType.url,
-                  ),
+                _buildModernTextField(
+                  controller: controller,
+                  isDark: isDark,
+                  labelText: 'TTS 服务地址',
+                  hintText: LocalStorage.ttsProviderType == 'mimo'
+                      ? 'https://token-plan-sgp.xiaomimimo.com/v1'
+                      : 'http://localhost:17493',
+                  prefixIcon: Icons.dns_outlined,
+                  keyboardType: TextInputType.url,
                 ),
                 const SizedBox(height: 12),
                 // 测试连接结果
@@ -2528,51 +2969,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 ),
               ),
               const SizedBox(height: 24),
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.grey.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withOpacity(0.15)
-                        : Colors.grey.withOpacity(0.2),
-                  ),
-                ),
-                child: TextField(
-                  controller: controller,
-                  style: TextStyle(
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: LocalStorage.asrProviderType == 'mimo'
-                        ? 'https://token-plan-sgp.xiaomimimo.com/v1'
-                        : 'https://api.groq.com',
-                    hintStyle: TextStyle(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.3)
-                          : Colors.grey[400],
-                    ),
-                    labelText: LocalStorage.asrProviderType == 'mimo'
-                        ? 'MiMo API 地址'
-                        : 'Base URL',
-                    labelStyle: TextStyle(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.6)
-                          : Colors.grey[600],
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.all(16),
-                    prefixIcon: Icon(
-                      Icons.dns_outlined,
-                      color: isDark
-                          ? Colors.white.withOpacity(0.5)
-                          : Colors.grey[500],
-                    ),
-                  ),
-                  keyboardType: TextInputType.url,
-                ),
+              _buildModernTextField(
+                controller: controller,
+                isDark: isDark,
+                labelText: LocalStorage.asrProviderType == 'mimo'
+                    ? 'MiMo API 地址'
+                    : 'Base URL',
+                hintText: LocalStorage.asrProviderType == 'mimo'
+                    ? 'https://token-plan-sgp.xiaomimimo.com/v1'
+                    : 'https://api.groq.com',
+                prefixIcon: Icons.dns_outlined,
+                keyboardType: TextInputType.url,
               ),
               const SizedBox(height: 24),
               // 保存按钮
@@ -2660,57 +3067,24 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                   ),
                 ),
                 const SizedBox(height: 24),
-                Container(
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white.withOpacity(0.08)
-                        : Colors.grey.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
+                _buildModernTextField(
+                  controller: controller,
+                  isDark: isDark,
+                  labelText: 'API Key',
+                  hintText: 'sk-...',
+                  prefixIcon: Icons.vpn_key_outlined,
+                  obscureText: obscure,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscure ? Icons.visibility_off : Icons.visibility,
                       color: isDark
-                          ? Colors.white.withOpacity(0.15)
-                          : Colors.grey.withOpacity(0.2),
+                          ? Colors.white.withOpacity(0.4)
+                          : Colors.grey[500],
+                      size: 20,
                     ),
-                  ),
-                  child: TextField(
-                    controller: controller,
-                    obscureText: obscure,
-                    style: TextStyle(
-                      color: isDark ? Colors.white : Colors.black,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'sk-...',
-                      hintStyle: TextStyle(
-                        color: isDark
-                            ? Colors.white.withOpacity(0.3)
-                            : Colors.grey[400],
-                      ),
-                      labelText: 'API Key',
-                      labelStyle: TextStyle(
-                        color: isDark
-                            ? Colors.white.withOpacity(0.6)
-                            : Colors.grey[600],
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.all(16),
-                      prefixIcon: Icon(
-                        Icons.vpn_key_outlined,
-                        color: isDark
-                            ? Colors.white.withOpacity(0.5)
-                            : Colors.grey[500],
-                      ),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          obscure ? Icons.visibility_off : Icons.visibility,
-                          color: isDark
-                              ? Colors.white.withOpacity(0.4)
-                              : Colors.grey[500],
-                        ),
-                        onPressed: () {
-                          setSheetState(() => obscure = !obscure);
-                        },
-                      ),
-                    ),
+                    onPressed: () {
+                      setSheetState(() => obscure = !obscure);
+                    },
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -2797,48 +3171,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 ),
               ),
               const SizedBox(height: 24),
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.grey.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withOpacity(0.15)
-                        : Colors.grey.withOpacity(0.2),
-                  ),
-                ),
-                child: TextField(
-                  controller: controller,
-                  style: TextStyle(
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: LocalStorage.asrProviderType == 'mimo'
-                        ? 'mimo-v2.5-asr'
-                        : 'whisper-large-v3-turbo',
-                    hintStyle: TextStyle(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.3)
-                          : Colors.grey[400],
-                    ),
-                    labelText: '模型名称',
-                    labelStyle: TextStyle(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.6)
-                          : Colors.grey[600],
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.all(16),
-                    prefixIcon: Icon(
-                      Icons.smart_toy_outlined,
-                      color: isDark
-                          ? Colors.white.withOpacity(0.5)
-                          : Colors.grey[500],
-                    ),
-                  ),
-                ),
+              _buildModernTextField(
+                controller: controller,
+                isDark: isDark,
+                labelText: '模型名称',
+                hintText: LocalStorage.asrProviderType == 'mimo'
+                    ? 'mimo-v2.5-asr'
+                    : 'whisper-large-v3-turbo',
+                prefixIcon: Icons.smart_toy_outlined,
               ),
               const SizedBox(height: 24),
               SizedBox(

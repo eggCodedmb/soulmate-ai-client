@@ -214,33 +214,34 @@ class ApiService {
         );
 
         final stream = response.data!.stream;
-        String buffer = '';
 
-        await for (final chunk in stream) {
-          buffer += utf8.decode(chunk);
+        // 使用 Utf8Decoder 和 LineSplitter 自动处理字节合并与按行切分
+        // 这样可以解决中文乱码问题，并且让流处理更及时
+        final lineStream = stream
+            .cast<List<int>>() // 显式转换类型以匹配 Utf8Decoder
+            .transform(utf8.decoder)
+            .transform(const LineSplitter());
 
-          // SSE 以空行分隔事件
-          while (buffer.contains('\n')) {
-            final index = buffer.indexOf('\n');
-            final line = buffer.substring(0, index).trim();
-            buffer = buffer.substring(index + 1);
+        await for (final line in lineStream) {
+          final trimmedLine = line.trim();
+          if (trimmedLine.isEmpty) continue;
 
-            if (line.startsWith('data:')) {
-              final jsonStr = line.substring(5).trim();
-              if (jsonStr.isEmpty) continue;
+          if (trimmedLine.startsWith('data:')) {
+            final jsonStr = trimmedLine.substring(5).trim();
+            if (jsonStr.isEmpty) continue;
+            if (jsonStr == '[DONE]') break;
 
-              try {
-                final jsonMap = json.decode(jsonStr) as Map<String, dynamic>;
-                final chatResponse = ChatResponse.fromJson(jsonMap);
-                controller.add(chatResponse);
+            try {
+              final jsonMap = json.decode(jsonStr) as Map<String, dynamic>;
+              final chatResponse = ChatResponse.fromJson(jsonMap);
+              controller.add(chatResponse);
 
-                if (chatResponse.done) {
-                  await controller.close();
-                  return;
-                }
-              } catch (e) {
-                debugPrint('SSE JSON解析失败: $jsonStr, error: $e');
+              if (chatResponse.done) {
+                if (!controller.isClosed) await controller.close();
+                return;
               }
+            } catch (e) {
+              debugPrint('SSE JSON解析失败: $jsonStr, error: $e');
             }
           }
         }
@@ -544,12 +545,22 @@ class SendMessageRequest {
   final String? contentType;
   final String? sceneMode;
 
+  /// LLM 模型配置（可选，不传则使用后端默认模型）
+  final String? llmProviderType;
+  final String? llmBaseUrl;
+  final String? llmApiKey;
+  final String? llmModel;
+
   SendMessageRequest({
     required this.conversationId,
     required this.companionId,
     required this.content,
     this.contentType,
     this.sceneMode,
+    this.llmProviderType,
+    this.llmBaseUrl,
+    this.llmApiKey,
+    this.llmModel,
   });
 
   Map<String, dynamic> toJson() => {
@@ -558,6 +569,10 @@ class SendMessageRequest {
     'content': content,
     if (contentType != null) 'contentType': contentType,
     if (sceneMode != null) 'sceneMode': sceneMode,
+    if (llmProviderType != null) 'llmProviderType': llmProviderType,
+    if (llmBaseUrl != null) 'llmBaseUrl': llmBaseUrl,
+    if (llmApiKey != null) 'llmApiKey': llmApiKey,
+    if (llmModel != null) 'llmModel': llmModel,
   };
 }
 

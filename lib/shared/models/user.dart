@@ -131,6 +131,12 @@ class UserSettings {
   final String? modelBaseUrl;
   final String? modelName;
 
+  /// LLM 模型配置
+  final String? llmProviderType;
+  final String? llmBaseUrl;
+  final String? llmApiKey;
+  final String? llmModel;
+
   const UserSettings({
     this.darkMode = 0,
     this.fontSize = 'normal',
@@ -139,6 +145,10 @@ class UserSettings {
     this.proactiveCare = 1,
     this.modelBaseUrl,
     this.modelName,
+    this.llmProviderType,
+    this.llmBaseUrl,
+    this.llmApiKey,
+    this.llmModel,
   });
 
   factory UserSettings.fromJson(Map<String, dynamic> json) {
@@ -150,6 +160,10 @@ class UserSettings {
       proactiveCare: (json['proactiveCare'] as num?)?.toInt() ?? 1,
       modelBaseUrl: json['modelBaseUrl'] as String?,
       modelName: json['modelName'] as String?,
+      llmProviderType: json['llmProviderType'] as String?,
+      llmBaseUrl: json['llmBaseUrl'] as String?,
+      llmApiKey: json['llmApiKey'] as String?,
+      llmModel: json['llmModel'] as String?,
     );
   }
 
@@ -161,5 +175,9 @@ class UserSettings {
     'proactiveCare': proactiveCare,
     'modelBaseUrl': modelBaseUrl,
     'modelName': modelName,
+    'llmProviderType': llmProviderType,
+    'llmBaseUrl': llmBaseUrl,
+    'llmApiKey': llmApiKey,
+    'llmModel': llmModel,
   };
 }
