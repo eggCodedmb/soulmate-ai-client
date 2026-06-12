@@ -175,7 +175,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _messageController.clear();
     _scrollToBottom();
 
-    // 插入空的 AI 回复占位（流式填充，放在 index 0 = 屏幕底部）
+    // 准备空的 AI 回复占位
     final aiPlaceholder = Message(
       id: 0,
       conversationId: _conversationId,
@@ -185,8 +185,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
     setState(() {
       _isStreaming = true;
-      _isTyping = false; // 用流式代替打字指示器
-      _messages.insert(0, aiPlaceholder);
+      _isTyping = true; // 显示等待指示器
     });
 
     final apiService = ref.read(apiServiceProvider);
@@ -221,9 +220,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           chunkCount++;
           buffer.write(chatResponse.content);
           debugPrint('ChatPage chunk #$chunkCount: "${chatResponse.content}", bufferLen=${buffer.length}');
-          // 更新占位消息的内容（index 0 = 屏幕底部）
+          
           if (mounted) {
             setState(() {
+              if (_isTyping) {
+                // 收到第一个 chunk，隐藏打字指示器，插入占位消息
+                _isTyping = false;
+                _messages.insert(0, aiPlaceholder);
+              }
+              // 更新占位消息的内容（index 0 = 屏幕底部）
               _messages[0] = Message(
                 id: 0,
                 conversationId: _conversationId,
@@ -249,11 +254,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       }
     }
 
-    debugPrint('流式结束: chunkCount=$chunkCount, bufferLen=${buffer.length}, hasError=$hasError, content="${buffer.length <= 50 ? buffer.toString() : '${buffer.toString().substring(0, 50)}...'}"');
+    debugPrint('流式结束: chunkCount=$chunkCount, bufferLen=${buffer.length}, hasError=$hasError');
+    
     _streamCancelToken = null;
 
     if (mounted) {
-      setState(() => _isStreaming = false);
+      setState(() {
+        _isStreaming = false;
+        _isTyping = false; // 确保隐藏打字指示器
+      });
 
       // 如果没有错误且有内容，刷新消息列表获取服务端真实数据
       if (!hasError && buffer.isNotEmpty) {
@@ -261,10 +270,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         // 自动触发 TTS 生成
         _autoGenerateTts(buffer.toString());
       } else if (!hasError && buffer.isEmpty) {
-        // AI 没返回任何内容，移除空占位
+        // AI 没返回任何内容，确保移除可能的空占位
         debugPrint('AI未返回任何内容，移除空占位');
         setState(() {
-          if (_messages.isNotEmpty && _messages[0].content.isEmpty) {
+          if (_messages.isNotEmpty && _messages[0].id == 0) {
             _messages.removeAt(0);
           }
         });
@@ -1099,20 +1108,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       );
     }
 
-    // 流式传输中：文字 + 闪烁光标
-    return RichText(
-      text: TextSpan(
+    // 流式传输中：直接展示文本 + 闪烁光标
+    return Text.rich(
+      TextSpan(
         children: [
-          TextSpan(
-            text: cleanContent,
-            style: TextStyle(fontSize: 15, height: 1.55, color: textColor),
-          ),
-          WidgetSpan(
-            child: _BlinkingCursor(color: textColor),
+          TextSpan(text: cleanContent),
+          const WidgetSpan(
             alignment: PlaceholderAlignment.middle,
+            child: _BlinkingCursor(),
           ),
         ],
       ),
+      style: TextStyle(fontSize: 15, height: 1.55, color: textColor),
     );
   }
 
@@ -1661,6 +1668,51 @@ class _TypingDotsState extends State<_TypingDots>
   }
 }
 
+// ==================== 闪烁光标组件 ====================
+
+class _BlinkingCursor extends StatefulWidget {
+  const _BlinkingCursor();
+
+  @override
+  State<_BlinkingCursor> createState() => _BlinkingCursorState();
+}
+
+class _BlinkingCursorState extends State<_BlinkingCursor>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _controller,
+      child: Container(
+        width: 8,
+        height: 18,
+        margin: const EdgeInsets.only(left: 2),
+        decoration: BoxDecoration(
+          color: AppColors.brandPink.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(1),
+        ),
+      ),
+    );
+  }
+}
+
 // ==================== 消息气泡动画包装器 ====================
 
 class _MessageBubbleWrapper extends StatefulWidget {
@@ -1793,58 +1845,6 @@ class _PulsingIconState extends State<_PulsingIcon>
           ),
         );
       },
-    );
-  }
-}
-
-// ==================== 闪烁光标组件 ====================
-
-class _BlinkingCursor extends StatefulWidget {
-  final Color color;
-  const _BlinkingCursor({required this.color});
-
-  @override
-  State<_BlinkingCursor> createState() => _BlinkingCursorState();
-}
-
-class _BlinkingCursorState extends State<_BlinkingCursor>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Opacity(
-          opacity: _controller.value,
-          child: child,
-        );
-      },
-      child: Text(
-        '▎',
-        style: TextStyle(
-          fontSize: 15,
-          height: 1.55,
-          color: widget.color,
-          fontWeight: FontWeight.w300,
-        ),
-      ),
     );
   }
 }
