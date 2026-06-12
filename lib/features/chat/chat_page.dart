@@ -191,8 +191,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final apiService = ref.read(apiServiceProvider);
     _streamCancelToken = CancelToken();
     final buffer = StringBuffer();
+    final ttsSentenceBuffer = StringBuffer();
+    int lastTtsSentLength = 0;
     bool hasError = false;
     int chunkCount = 0;
+
+    // 获取 TTS 配置
+    final ttsConfig = _effectiveTtsConfig;
 
     try {
       await for (final chatResponse in apiService.streamChat(
@@ -218,8 +223,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
         if (chatResponse.content != null && chatResponse.content!.isNotEmpty) {
           chunkCount++;
-          buffer.write(chatResponse.content);
-          debugPrint('ChatPage chunk #$chunkCount: "${chatResponse.content}", bufferLen=${buffer.length}');
+          final chunk = chatResponse.content!;
+          buffer.write(chunk);
+          debugPrint('ChatPage chunk #$chunkCount: "$chunk", bufferLen=${buffer.length}');
           
           if (mounted) {
             setState(() {
@@ -228,7 +234,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 _isTyping = false;
                 _messages.insert(0, aiPlaceholder);
               }
-              // 更新占位消息的内容（index 0 = 屏幕底部）
+              // 更新占位消息的内容
               _messages[0] = Message(
                 id: 0,
                 conversationId: _conversationId,
@@ -239,6 +245,39 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             });
             _scrollToBottom();
           }
+
+          // ==================== TTS 流式处理逻辑 ====================
+          if (ttsConfig != null) {
+            ttsSentenceBuffer.write(chunk);
+            final currentTtsText = ttsSentenceBuffer.toString();
+            
+            // 匹配终止标点：。！？.!? 以及换行符
+            // 避免在简写（如 "Mr."）处误切，这里简单处理：匹配到标点且长度超过一定阈值，或者有换行
+            final reg = RegExp(r'[。！？!？\n\r]');
+            final matches = reg.allMatches(currentTtsText).toList();
+            
+            if (matches.isNotEmpty) {
+              final lastMatch = matches.last;
+              // 如果标点后还有内容（可能是下一句的开头），只取到标点为止
+              final completeText = currentTtsText.substring(0, lastMatch.end);
+              
+              if (completeText.length > lastTtsSentLength) {
+                final newSentence = completeText.substring(lastTtsSentLength).trim();
+                // 过滤掉只有标点或太短的内容（除非是最后一句）
+                if (newSentence.length > 1) {
+                  debugPrint('[TTS] 提取到完整句子并加入队列: "$newSentence"');
+                  final messageKey = '${_conversationId}_0'; // 使用占位 ID 作为 key
+                  ref.read(ttsProvider.notifier).enqueueSegment(
+                    messageKey: messageKey,
+                    text: newSentence,
+                    config: ttsConfig,
+                  );
+                  lastTtsSentLength = lastMatch.end;
+                }
+              }
+            }
+          }
+          // =========================================================
         }
 
         if (chatResponse.done) {
@@ -266,9 +305,24 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
       // 如果没有错误且有内容，刷新消息列表获取服务端真实数据
       if (!hasError && buffer.isNotEmpty) {
+        // 处理最后剩余的文本（如果没有以标点结尾）
+        if (ttsConfig != null && ttsSentenceBuffer.length > lastTtsSentLength) {
+          final remainingText = ttsSentenceBuffer.toString().substring(lastTtsSentLength).trim();
+          if (remainingText.isNotEmpty) {
+            debugPrint('[TTS] 处理最后剩余段落: "$remainingText"');
+            ref.read(ttsProvider.notifier).enqueueSegment(
+              messageKey: '${_conversationId}_0',
+              text: remainingText,
+              config: ttsConfig,
+            );
+          }
+        }
+
         await _refreshMessages();
-        // 自动触发 TTS 生成
-        _autoGenerateTts(buffer.toString());
+        
+        // 最后触发一次全量生成。如果还在播放占位符段落，就不自动播放，避免中断。
+        final isPlayingPlaceholder = ref.read(ttsProvider).playingMessageKey == '${_conversationId}_0';
+        _autoGenerateTts(buffer.toString(), autoPlay: !isPlayingPlaceholder);
       } else if (!hasError && buffer.isEmpty) {
         // AI 没返回任何内容，确保移除可能的空占位
         debugPrint('AI未返回任何内容，移除空占位');
@@ -367,7 +421,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   /// 自动为 AI 回复生成 TTS 音频
-  void _autoGenerateTts(String text) {
+  void _autoGenerateTts(String text, {bool autoPlay = true}) {
     if (!mounted) return;
     final config = _effectiveTtsConfig;
     if (config == null) return;
@@ -383,7 +437,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       messageKey: key,
       text: text,
       config: config,
-      autoPlay: true,
+      autoPlay: autoPlay,
     );
   }
 

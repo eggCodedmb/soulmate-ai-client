@@ -16,6 +16,7 @@ import '../../shared/models/tts_config.dart';
 class TtsAudioService {
   final TtsApiClient _api;
   final AudioPlayer _player = AudioPlayer();
+  late final ConcatenatingAudioSource _playlist;
 
   /// 音频缓存目录
   Directory? _cacheDir;
@@ -23,7 +24,9 @@ class TtsAudioService {
   /// 当前播放状态
   bool _isPlaying = false;
   String? _playingMessageKey;
-  String? _currentFilePath;
+  
+  // 记录当前播放列表中已有的文件路径，避免重复添加
+  final List<String> _queuedFilePaths = [];
 
   /// 播放状态回调
   VoidCallback? _onStateChanged;
@@ -31,21 +34,23 @@ class TtsAudioService {
   StreamSubscription<PlayerState>? _playerStateSubscription;
 
   TtsAudioService(this._api) {
+    _playlist = ConcatenatingAudioSource(children: []);
+    _player.setAudioSource(_playlist);
+
     _playerStateSubscription = _player.playerStateStream.listen((state) {
       final wasPlaying = _isPlaying;
       final completed = state.processingState == ProcessingState.completed;
-      // 在 just_audio 中，当自然播放完成时，state.playing 依然可能为 true。
-      // 因此我们需要结合 completed 状态来判断真实的播放状态。
+      
       _isPlaying = state.playing && !completed;
       
       if (wasPlaying && !_isPlaying) {
-        // 播放结束或暂停 —— 先回调通知（此时 playingMessageKey 仍可用）
         _onStateChanged?.call();
-        // 回调完成后再清除 key
         if (completed) {
           _playingMessageKey = null;
-          _currentFilePath = null; // 播放完成重置当前路径，确保下次播放相同文件能重新 load
-          _player.stop(); // 彻底停止播放器以重置状态为 idle，释放音频资源
+          _queuedFilePaths.clear();
+          // 注意：不要在完成时直接 stop()，因为可能还会有新的段落加入
+          // 但如果确实播完了所有段落，清空播放列表
+          _playlist.clear();
         }
       } else {
         _onStateChanged?.call();
@@ -92,16 +97,12 @@ class TtsAudioService {
   }
 
   /// 生成音频（使用流式接口），写入缓存文件，返回文件路径
-  ///
-  /// 如果已缓存则直接返回缓存路径。
   Future<String?> generateAndCache(String text, TtsConfig config) async {
     if (!_api.isConfigured || config.profileId == null) return null;
 
-    // 检查缓存
     final cached = await getCachedAudioPath(text, config);
     if (cached != null) return cached;
 
-    // 使用流式接口生成
     final request = buildTtsRequest(config, text);
     final dir = await _getCacheDir();
     final key = _cacheKey(text, config);
@@ -118,7 +119,6 @@ class TtsAudioService {
       return file.path;
     } catch (e) {
       await sink.close();
-      // 清理不完整文件
       if (await file.exists()) {
         await file.delete();
       }
@@ -127,26 +127,41 @@ class TtsAudioService {
     }
   }
 
-  /// 播放指定文件
-  Future<void> play(String filePath, String messageKey) async {
+  /// 将音频加入播放队列
+  Future<void> enqueue(String filePath, String messageKey) async {
     try {
-      if (_currentFilePath != filePath) {
-        await _player.setFilePath(filePath);
-        _currentFilePath = filePath;
+      // 如果是新的消息，清空旧队列
+      if (_playingMessageKey != messageKey) {
+        await stop();
+        _playingMessageKey = messageKey;
       }
-      // 强制将播放位置重置到起点，以解决在 just_audio 中重复播放相同文件失效的问题
-      await _player.seek(Duration.zero);
-      _playingMessageKey = messageKey;
-      _isPlaying = true;
-      _onStateChanged?.call();
-      await _player.play();
+
+      // 避免重复添加同一文件（针对流式分段可能的重试逻辑）
+      if (_queuedFilePaths.contains(filePath)) return;
+
+      _queuedFilePaths.add(filePath);
+      await _playlist.add(AudioSource.file(filePath));
+
+      // 如果当前没在播放，且这是第一段，开始播放
+      if (!_isPlaying && _playlist.length > 0) {
+        // 如果处于 completed 状态（之前播完了），需要 seek 到 0
+        if (_player.processingState == ProcessingState.completed) {
+          await _player.seek(Duration.zero);
+        }
+        await _player.play();
+        _isPlaying = true;
+        _onStateChanged?.call();
+      }
     } catch (e) {
-      debugPrint('[TTS] 播放失败: $e');
-      _currentFilePath = null;
-      _playingMessageKey = null;
-      _isPlaying = false;
-      _onStateChanged?.call();
+      debugPrint('[TTS] 加入队列播放失败: $e');
     }
+  }
+
+  /// 播放指定文件（单文件模式，清空队列）
+  Future<void> play(String filePath, String messageKey) async {
+    await stop();
+    _playingMessageKey = messageKey;
+    await enqueue(filePath, messageKey);
   }
 
   /// 暂停/继续播放
@@ -158,10 +173,11 @@ class TtsAudioService {
     }
   }
 
-  /// 停止播放
+  /// 停止播放并清空队列
   Future<void> stop() async {
     await _player.stop();
-    _currentFilePath = null;
+    await _playlist.clear();
+    _queuedFilePaths.clear();
     _playingMessageKey = null;
     _isPlaying = false;
     _onStateChanged?.call();

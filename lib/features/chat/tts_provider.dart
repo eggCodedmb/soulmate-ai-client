@@ -199,6 +199,46 @@ class TtsNotifier extends StateNotifier<TtsState> {
     }
   }
 
+  /// 为指定消息生成并播放一段音频（流式段落支持）
+  Future<void> enqueueSegment({
+    required String messageKey,
+    required String text,
+    required TtsConfig config,
+  }) async {
+    final svc = _audioService;
+    if (svc == null || !svc.isConfigured || text.trim().isEmpty) return;
+
+    final currentEntry = state.getMessageState(messageKey);
+    
+    // 如果是第一段且尚未开始生成/播放，标记为正在生成
+    if (currentEntry.status == MessageTtsStatus.none) {
+      _updateMessageState(messageKey, const MessageTtsEntry().copyWith(
+        status: MessageTtsStatus.generating,
+      ));
+    }
+
+    try {
+      final path = await svc.generateAndCache(text, config);
+      if (path != null) {
+        // 加入播放队列
+        await svc.enqueue(path, messageKey);
+        
+        // 更新状态为正在播放（如果 service 还没更新状态）
+        if (state.playingMessageKey != messageKey) {
+          if (mounted) state = state.copyWith(playingMessageKey: messageKey);
+        }
+        
+        // 只要有一段 ready/playing，就把整体状态设为 playing/ready
+        _updateMessageState(messageKey, MessageTtsEntry(
+          status: svc.isPlaying ? MessageTtsStatus.playing : MessageTtsStatus.ready,
+          audioPath: path, // 记录最后一段路径（仅参考）
+        ));
+      }
+    } catch (e) {
+      debugPrint('[TTS] 段落生成失败: $e');
+    }
+  }
+
   /// 播放指定消息的音频
   Future<void> playMessage(String messageKey) async {
     final svc = _audioService;
@@ -217,6 +257,9 @@ class TtsNotifier extends StateNotifier<TtsState> {
       status: MessageTtsStatus.playing,
     ));
 
+    // 这里由于 play 是针对单文件设计的，如果消息由多段组成，
+    // 点击“重新播放”目前只会播放最后一段（或缓存的全量文件）。
+    // 在流式场景下，点击播放按钮通常发生在流结束后，此时可以播放全量缓存。
     await svc.play(entry.audioPath!, messageKey);
   }
 
