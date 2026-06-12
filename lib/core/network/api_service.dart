@@ -222,30 +222,46 @@ class ApiService {
             .transform(utf8.decoder)
             .transform(const LineSplitter());
 
+        int chunkCount = 0;
+        StringBuffer rawBuffer = StringBuffer();
+
         await for (final line in lineStream) {
           final trimmedLine = line.trim();
           if (trimmedLine.isEmpty) continue;
 
+          // 支持标准 SSE 格式 (data: {...}) 和纯 JSON 格式 ({...})
+          String? jsonStr;
           if (trimmedLine.startsWith('data:')) {
-            final jsonStr = trimmedLine.substring(5).trim();
-            if (jsonStr.isEmpty) continue;
-            if (jsonStr == '[DONE]') break;
+            jsonStr = trimmedLine.substring(5).trim();
+          } else if (trimmedLine.startsWith('{') && trimmedLine.endsWith('}')) {
+            // 兼容纯 JSON 行（非标准 SSE 格式）
+            jsonStr = trimmedLine;
+          }
 
-            try {
-              final jsonMap = json.decode(jsonStr) as Map<String, dynamic>;
-              final chatResponse = ChatResponse.fromJson(jsonMap);
-              controller.add(chatResponse);
+          if (jsonStr == null || jsonStr.isEmpty) continue;
+          if (jsonStr == '[DONE]') break;
 
-              if (chatResponse.done) {
-                if (!controller.isClosed) await controller.close();
-                return;
-              }
-            } catch (e) {
-              debugPrint('SSE JSON解析失败: $jsonStr, error: $e');
+          try {
+            final jsonMap = json.decode(jsonStr) as Map<String, dynamic>;
+            final chatResponse = ChatResponse.fromJson(jsonMap);
+            chunkCount++;
+            if (chatResponse.content != null) {
+              rawBuffer.write(chatResponse.content);
             }
+            debugPrint('SSE chunk #$chunkCount: content="${chatResponse.content}", done=${chatResponse.done}, totalLen=${rawBuffer.length}');
+            controller.add(chatResponse);
+
+            if (chatResponse.done) {
+              debugPrint('SSE流完成: 共收到 $chunkCount 个chunk, 总长度 ${rawBuffer.length}');
+              if (!controller.isClosed) await controller.close();
+              return;
+            }
+          } catch (e) {
+            debugPrint('SSE JSON解析失败: $jsonStr, error: $e');
           }
         }
 
+        debugPrint('SSE流结束(无done标记): 共收到 $chunkCount 个chunk, 总长度 ${rawBuffer.length}');
         // 流正常结束但没收到 done=true
         if (!controller.isClosed) {
           await controller.close();

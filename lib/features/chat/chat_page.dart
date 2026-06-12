@@ -193,6 +193,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _streamCancelToken = CancelToken();
     final buffer = StringBuffer();
     bool hasError = false;
+    int chunkCount = 0;
 
     try {
       await for (final chatResponse in apiService.streamChat(
@@ -209,6 +210,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       )) {
         if (chatResponse.error != null && chatResponse.error!.isNotEmpty) {
           hasError = true;
+          debugPrint('SSE收到错误: ${chatResponse.error}');
           if (mounted) {
             SoulToast.error(context, chatResponse.error!);
           }
@@ -216,7 +218,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         }
 
         if (chatResponse.content != null && chatResponse.content!.isNotEmpty) {
+          chunkCount++;
           buffer.write(chatResponse.content);
+          debugPrint('ChatPage chunk #$chunkCount: "${chatResponse.content}", bufferLen=${buffer.length}');
           // 更新占位消息的内容（index 0 = 屏幕底部）
           if (mounted) {
             setState(() {
@@ -232,7 +236,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           }
         }
 
-        if (chatResponse.done) break;
+        if (chatResponse.done) {
+          debugPrint('SSE完成: done=true, 共 $chunkCount 个有效chunk, 总长 ${buffer.length}');
+          break;
+        }
       }
     } catch (e) {
       debugPrint('流式消息异常: $e');
@@ -242,6 +249,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       }
     }
 
+    debugPrint('流式结束: chunkCount=$chunkCount, bufferLen=${buffer.length}, hasError=$hasError, content="${buffer.length <= 50 ? buffer.toString() : '${buffer.toString().substring(0, 50)}...'}"');
     _streamCancelToken = null;
 
     if (mounted) {
@@ -254,6 +262,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         _autoGenerateTts(buffer.toString());
       } else if (!hasError && buffer.isEmpty) {
         // AI 没返回任何内容，移除空占位
+        debugPrint('AI未返回任何内容，移除空占位');
         setState(() {
           if (_messages.isNotEmpty && _messages[0].content.isEmpty) {
             _messages.removeAt(0);
