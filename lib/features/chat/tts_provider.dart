@@ -109,19 +109,33 @@ class TtsNotifier extends StateNotifier<TtsState> {
     final svc = _audioService;
     if (svc == null) return;
 
-    final playingKey = svc.playingMessageKey;
-    if (playingKey != null && svc.isPlaying) {
-      final entry = state.getMessageState(playingKey);
-      _updateMessageState(playingKey, entry.copyWith(
-        status: MessageTtsStatus.playing,
-      ));
-    } else if (playingKey != null && !svc.isPlaying) {
-      // 播放结束
-      final entry = state.getMessageState(playingKey);
-      _updateMessageState(playingKey, entry.copyWith(
-        status: MessageTtsStatus.ready,
-      ));
-      if (mounted) state = state.copyWith(playingMessageKey: null);
+    final svcKey = svc.playingMessageKey;
+    final svcIsPlaying = svc.isPlaying;
+    final providerPlayingKey = state.playingMessageKey;
+
+    if (svcKey != null) {
+      final entry = state.getMessageState(svcKey);
+      if (svcIsPlaying) {
+        // 1. 正在播放
+        if (entry.status != MessageTtsStatus.playing) {
+          _updateMessageState(svcKey, entry.copyWith(status: MessageTtsStatus.playing));
+        }
+        if (providerPlayingKey != svcKey) {
+          state = state.copyWith(playingMessageKey: svcKey);
+        }
+      } else {
+        // 2. 暂停或缓冲中 (Key 还在，但未在播放)
+        if (entry.status != MessageTtsStatus.paused && entry.status != MessageTtsStatus.generating) {
+          _updateMessageState(svcKey, entry.copyWith(status: MessageTtsStatus.paused));
+        }
+      }
+    } else if (providerPlayingKey != null) {
+      // 3. 彻底停止或播放结束 (svcKey 已清空)
+      final entry = state.getMessageState(providerPlayingKey);
+      if (entry.status == MessageTtsStatus.playing || entry.status == MessageTtsStatus.paused) {
+        _updateMessageState(providerPlayingKey, entry.copyWith(status: MessageTtsStatus.ready));
+      }
+      state = state.copyWith(playingMessageKey: null);
     }
   }
 

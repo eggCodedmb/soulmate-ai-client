@@ -44,7 +44,6 @@ class TtsAudioService {
       _isPlaying = state.playing && !completed;
       
       if (wasPlaying && !_isPlaying) {
-        _onStateChanged?.call();
         if (completed) {
           _playingMessageKey = null;
           _queuedFilePaths.clear();
@@ -52,6 +51,7 @@ class TtsAudioService {
           // 但如果确实播完了所有段落，清空播放列表
           _playlist.clear();
         }
+        _onStateChanged?.call();
       } else {
         _onStateChanged?.call();
       }
