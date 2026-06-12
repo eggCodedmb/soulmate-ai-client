@@ -11,6 +11,7 @@ class Companion {
   final String speakingStyle;
   final String? avatarUrl;
   final String? themeColor;
+  final DateTime? birthday;
   final int status;
   final int companionOrder;
   final List<String> personalityKeys;
@@ -28,6 +29,7 @@ class Companion {
     this.speakingStyle = 'casual',
     this.avatarUrl,
     this.themeColor,
+    this.birthday,
     this.status = 1,
     this.companionOrder = 0,
     this.personalityKeys = const [],
@@ -47,6 +49,7 @@ class Companion {
       speakingStyle: json['speakingStyle'] as String? ?? 'casual',
       avatarUrl: json['avatarUrl'] as String?,
       themeColor: json['themeColor'] as String?,
+      birthday: json['birthday'] != null ? DateTime.parse(json['birthday'] as String) : null,
       status: (json['status'] as num?)?.toInt() ?? 1,
       companionOrder: (json['companionOrder'] as num?)?.toInt() ?? 0,
       personalityKeys: (json['personalityKeys'] as List<dynamic>?)
@@ -75,6 +78,7 @@ class Companion {
     'speakingStyle': speakingStyle,
     'avatarUrl': avatarUrl,
     'themeColor': themeColor,
+    'birthday': birthday?.toIso8601String(),
     'status': status,
     'companionOrder': companionOrder,
     'personalityKeys': personalityKeys,

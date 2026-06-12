@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:just_audio/just_audio.dart';
 import '../../core/network/tts_api_client.dart';
 import '../../shared/models/tts_config.dart';
 import 'tts_audio_service.dart';
@@ -112,6 +113,7 @@ class TtsNotifier extends StateNotifier<TtsState> {
     final svcKey = svc.playingMessageKey;
     final svcIsPlaying = svc.isPlaying;
     final providerPlayingKey = state.playingMessageKey;
+    final isCompleted = svc.processingState == ProcessingState.completed;
 
     if (svcKey != null) {
       final entry = state.getMessageState(svcKey);
@@ -123,14 +125,22 @@ class TtsNotifier extends StateNotifier<TtsState> {
         if (providerPlayingKey != svcKey) {
           state = state.copyWith(playingMessageKey: svcKey);
         }
+      } else if (isCompleted) {
+        // 2. 播放结束
+        if (entry.status != MessageTtsStatus.ready) {
+          _updateMessageState(svcKey, entry.copyWith(status: MessageTtsStatus.ready));
+        }
+        if (providerPlayingKey != null) {
+          state = state.copyWith(playingMessageKey: null);
+        }
       } else {
-        // 2. 暂停或缓冲中 (Key 还在，但未在播放)
+        // 3. 暂停或缓冲中
         if (entry.status != MessageTtsStatus.paused && entry.status != MessageTtsStatus.generating) {
           _updateMessageState(svcKey, entry.copyWith(status: MessageTtsStatus.paused));
         }
       }
     } else if (providerPlayingKey != null) {
-      // 3. 彻底停止或播放结束 (svcKey 已清空)
+      // 4. 彻底停止 (svcKey 已清空)
       final entry = state.getMessageState(providerPlayingKey);
       if (entry.status == MessageTtsStatus.playing || entry.status == MessageTtsStatus.paused) {
         _updateMessageState(providerPlayingKey, entry.copyWith(status: MessageTtsStatus.ready));
@@ -171,6 +181,15 @@ class TtsNotifier extends StateNotifier<TtsState> {
     final svc = _audioService;
     if (svc == null || !svc.isConfigured) return;
 
+    final currentEntry = state.getMessageState(messageKey);
+    if (currentEntry.status == MessageTtsStatus.ready || 
+        currentEntry.status == MessageTtsStatus.playing) {
+      if (autoPlay && currentEntry.status == MessageTtsStatus.ready) {
+        await playMessage(messageKey);
+      }
+      return;
+    }
+
     // 检查缓存
     final cached = await svc.getCachedAudioPath(text, config);
     if (cached != null) {
@@ -183,11 +202,7 @@ class TtsNotifier extends StateNotifier<TtsState> {
       }
       return;
     }
-
-    // 标记正在生成
-    _updateMessageState(messageKey, const MessageTtsEntry().copyWith(
-      status: MessageTtsStatus.generating,
-    ));
+  // ... rest of method
 
     try {
       final path = await svc.generateAndCache(text, config);
@@ -243,10 +258,13 @@ class TtsNotifier extends StateNotifier<TtsState> {
         }
         
         // 只要有一段 ready/playing，就把整体状态设为 playing/ready
-        _updateMessageState(messageKey, MessageTtsEntry(
-          status: svc.isPlaying ? MessageTtsStatus.playing : MessageTtsStatus.ready,
-          audioPath: path, // 记录最后一段路径（仅参考）
-        ));
+        final newStatus = svc.isPlaying ? MessageTtsStatus.playing : MessageTtsStatus.ready;
+        if (currentEntry.status != newStatus) {
+          _updateMessageState(messageKey, MessageTtsEntry(
+            status: newStatus,
+            audioPath: path, // 记录最后一段路径（仅参考）
+          ));
+        }
       }
     } catch (e) {
       debugPrint('[TTS] 段落生成失败: $e');

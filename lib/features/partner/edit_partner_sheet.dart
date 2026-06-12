@@ -67,6 +67,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
   late List<String> _selectedPersonalities;
   late String _selectedSpeakingStyle;
   late String? _currentAvatarUrl;
+  DateTime? _selectedBirthday;
   bool _isSaving = false;
   bool _isUploadingAvatar = false;
 
@@ -126,6 +127,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
     _selectedPersonalities = c != null ? List.from(c.personalityKeys) : [];
     _selectedSpeakingStyle = c?.speakingStyle ?? 'casual';
     _currentAvatarUrl = c?.avatarUrl;
+    _selectedBirthday = c?.birthday;
     _ttsEnabled = c?.ttsConfig?.enabled ?? false;
     _ttsConfig = c?.ttsConfig ?? TtsConfig();
 
@@ -180,6 +182,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
         _selectedRelationship != c.relationshipType ||
         _selectedSpeakingStyle != c.speakingStyle ||
         _currentAvatarUrl != c.avatarUrl ||
+        _selectedBirthday != c.birthday ||
         _ttsEnabled != currentTtsEnabled ||
         (_ttsEnabled && _ttsConfig.profileId != c.ttsConfig?.profileId) ||
         !_listEquals(_selectedPersonalities, c.personalityKeys);
@@ -335,6 +338,33 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
     );
   }
 
+  // ==================== 出生日期选择 ====================
+
+  Future<void> _selectBirthday() async {
+    final initialDate = _selectedBirthday ?? DateTime(2000, 1, 1);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+      locale: const Locale('zh', 'CN'),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+                  surface: Theme.of(context).colorScheme.surface,
+                ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (mounted && picked != null && picked != _selectedBirthday) {
+      setState(() => _selectedBirthday = picked);
+    }
+  }
+
   // ==================== 保存逻辑 ====================
 
   Future<void> _save() async {
@@ -348,7 +378,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
       if (_isCreateMode) {
         // 创建模式
         final ttsConfig = _ttsEnabled ? _ttsConfig.copyWith(enabled: true) : null;
-        await apiService.createCompanion(
+        final newCompanion = await apiService.createCompanion(
           CreateCompanionRequest(
             name: _nameController.text.trim(),
             gender: _selectedGender,
@@ -358,19 +388,16 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
             description: _descriptionController.text.trim().isEmpty
                 ? null
                 : _descriptionController.text.trim(),
+            birthday: _selectedBirthday,
             ttsConfig: ttsConfig,
           ),
         );
 
-        // 如果创建时选了头像，创建成功后需要获取伴侣并更新头像
+        // 如果创建时选了头像，创建成功后需要更新头像
         // （createCompanion 不支持 avatarUrl 参数）
         if (_currentAvatarUrl != null && _currentAvatarUrl!.isNotEmpty) {
           try {
-            final companions = await apiService.getCompanionList();
-            if (companions.isNotEmpty) {
-              final newest = companions.last;
-              await apiService.updateCompanionAvatar(newest.id, _currentAvatarUrl);
-            }
+            await apiService.updateCompanionAvatar(newCompanion.id, _currentAvatarUrl);
           } catch (_) {
             // 头像更新失败不影响主流程
           }
@@ -392,6 +419,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
               : _descriptionController.text.trim(),
           avatarUrl: _currentAvatarUrl,
           themeColor: c.themeColor,
+          birthday: _selectedBirthday,
           status: c.status,
           companionOrder: c.companionOrder,
           ttsConfig: ttsConfig,
@@ -428,13 +456,15 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
     final isLight = Theme.of(context).brightness == Brightness.light;
     final scheme = Theme.of(context).colorScheme;
     final personalityColors = AppColors.personalityColors;
+    final apiClient = ref.watch(apiClientProvider);
+    final ttsApi = ref.watch(ttsApiProvider);
 
     return Scaffold(
       backgroundColor: scheme.surface,
       body: CustomScrollView(
         slivers: [
           // Hero Header
-          _buildSliverAppBar(isLight, scheme, personalityColors),
+          _buildSliverAppBar(isLight, scheme, personalityColors, apiClient),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -451,6 +481,8 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
                       _buildNameField(scheme),
                       const SizedBox(height: 20),
                       _buildGenderSelector(scheme),
+                      const SizedBox(height: 20),
+                      _buildBirthdayField(scheme),
                       const SizedBox(height: 20),
                       _buildRelationshipSelector(scheme, personalityColors, isLight),
                     ],
@@ -490,7 +522,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
                       _buildTtsToggle(scheme, isLight),
                       if (_ttsEnabled) ...[
                         const SizedBox(height: 20),
-                        _buildVoiceProfilePicker(scheme, isLight),
+                        _buildVoiceProfilePicker(scheme, isLight, ttsApi),
                         if (_ttsConfig.profileId != null) ...[
                           const SizedBox(height: 20),
                           _buildTtsLanguageSelector(scheme),
@@ -522,6 +554,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
     bool isLight,
     ColorScheme scheme,
     Map<String, PersonalityColors> personalityColors,
+    ApiClient apiClient,
   ) {
     final personalityKey = _selectedPersonalities.isNotEmpty
         ? _selectedPersonalities.first
@@ -556,7 +589,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
               children: [
                 const SizedBox(height: 24),
                 // 头像区域
-                _buildHeroAvatar(avatarUrl, colors, isLight, scheme),
+                _buildHeroAvatar(avatarUrl, colors, isLight, scheme, apiClient),
                 const SizedBox(height: 16),
                 // 伴侣名字
                 Text(
@@ -586,6 +619,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
     PersonalityColors colors,
     bool isLight,
     ColorScheme scheme,
+    ApiClient apiClient,
   ) {
     return GestureDetector(
       onTap: _isUploadingAvatar ? null : _showAvatarOptions,
@@ -630,7 +664,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
                 child: ClipOval(
                   child: avatarUrl != null && avatarUrl.isNotEmpty
                       ? Image.network(
-                          ref.read(apiClientProvider).getFullUrl(avatarUrl),
+                          apiClient.getFullUrl(avatarUrl),
                           width: 120,
                           height: 120,
                           fit: BoxFit.cover,
@@ -827,59 +861,133 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
             letterSpacing: 0.5,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Row(
           children: _genders.map((gender) {
             final isSelected = _selectedGender == gender['value'];
             return Expanded(
               child: Padding(
                 padding: EdgeInsets.only(
-                  right: gender != _genders.last ? 8 : 0,
+                  right: gender != _genders.last ? 10 : 0,
                 ),
-                child: GestureDetector(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    setState(() => _selectedGender = gender['value'] as int);
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeInOut,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? scheme.primary.withOpacity(0.12)
-                          : scheme.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      setState(() => _selectedGender = gender['value'] as int);
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeOutCubic,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
                         color: isSelected
-                            ? scheme.primary
-                            : scheme.outline.withOpacity(0.15),
-                        width: isSelected ? 1.5 : 1,
+                            ? scheme.primary.withOpacity(0.08)
+                            : scheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isSelected
+                              ? scheme.primary
+                              : scheme.outline.withOpacity(0.12),
+                          width: isSelected ? 1.8 : 1,
+                        ),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: scheme.primary.withOpacity(0.1),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                )
+                              ]
+                            : null,
                       ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          gender['icon'] as IconData,
-                          size: 18,
-                          color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          gender['label'] as String,
-                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            gender['icon'] as IconData,
+                            size: 20,
                             color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Text(
+                            gender['label'] as String,
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             );
           }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBirthdayField(ColorScheme scheme) {
+    final birthdayStr = _selectedBirthday != null
+        ? '${_selectedBirthday!.year}年${_selectedBirthday!.month}月${_selectedBirthday!.day}日'
+        : '设置出生日期';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '出生日期',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _selectBirthday,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: scheme.outline.withOpacity(0.12),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.cake_outlined, size: 20, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      birthdayStr,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: _selectedBirthday != null
+                            ? scheme.onSurface
+                            : scheme.onSurfaceVariant.withOpacity(0.6),
+                        fontWeight: _selectedBirthday != null ? FontWeight.w500 : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 24,
+                    color: scheme.onSurfaceVariant.withOpacity(0.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -900,54 +1008,68 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
             letterSpacing: 0.5,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         GridView.count(
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
           childAspectRatio: 2.2,
           children: _relationships.map((rel) {
             final isSelected = _selectedRelationship == rel['value'];
-            return GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                setState(() => _selectedRelationship = rel['value'] as String);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeInOut,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? scheme.primary.withOpacity(0.12)
-                      : scheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  setState(() => _selectedRelationship = rel['value'] as String);
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
                     color: isSelected
-                        ? scheme.primary
-                        : scheme.outline.withOpacity(0.15),
-                    width: isSelected ? 1.5 : 1,
+                        ? scheme.primary.withOpacity(0.08)
+                        : scheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isSelected
+                          ? scheme.primary
+                          : scheme.outline.withOpacity(0.12),
+                      width: isSelected ? 1.8 : 1,
+                    ),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: scheme.primary.withOpacity(0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            )
+                          ]
+                        : null,
                   ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      rel['icon'] as IconData,
-                      size: 20,
-                      color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      rel['label'] as String,
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        rel['icon'] as IconData,
+                        size: 22,
                         color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 10),
+                      Text(
+                        rel['label'] as String,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -1110,9 +1232,7 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
     );
   }
 
-  Widget _buildVoiceProfilePicker(ColorScheme scheme, bool isLight) {
-    final ttsApi = ref.read(ttsApiProvider);
-
+  Widget _buildVoiceProfilePicker(ColorScheme scheme, bool isLight, dynamic ttsApi) {
     if (!ttsApi.isConfigured) {
       return Container(
         padding: const EdgeInsets.all(16),

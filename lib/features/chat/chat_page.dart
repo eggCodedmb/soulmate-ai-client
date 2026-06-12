@@ -320,9 +320,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
         await _refreshMessages();
         
-        // 最后触发一次全量生成。如果还在播放占位符段落，就不自动播放，避免中断。
-        final isPlayingPlaceholder = ref.read(ttsProvider).playingMessageKey == '${_conversationId}_0';
-        _autoGenerateTts(buffer.toString(), autoPlay: !isPlayingPlaceholder);
+        // 最后触发一次全量生成以持久化完整缓存。
+        // 设置 autoPlay: false，因为此时可能正在播放流式片段，不应中断。
+        _autoGenerateTts(buffer.toString(), autoPlay: false);
       } else if (!hasError && buffer.isEmpty) {
         // AI 没返回任何内容，确保移除可能的空占位
         debugPrint('AI未返回任何内容，移除空占位');

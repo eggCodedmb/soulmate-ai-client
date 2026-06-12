@@ -530,6 +530,7 @@ class CreateCompanionRequest {
   final List<String>? personalityKeys;
   final String? speakingStyle;
   final String? description;
+  final DateTime? birthday;
   final TtsConfig? ttsConfig;
 
   CreateCompanionRequest({
@@ -539,6 +540,7 @@ class CreateCompanionRequest {
     this.personalityKeys,
     this.speakingStyle,
     this.description,
+    this.birthday,
     this.ttsConfig,
   });
 
@@ -549,6 +551,7 @@ class CreateCompanionRequest {
     if (personalityKeys != null) 'personalityKeys': personalityKeys,
     if (speakingStyle != null) 'speakingStyle': speakingStyle,
     if (description != null) 'description': description,
+    'birthday': birthday?.toIso8601String(),
     if (ttsConfig != null) 'ttsConfig': ttsConfig!.toJson(),
   };
 }

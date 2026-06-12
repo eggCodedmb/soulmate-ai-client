@@ -389,6 +389,15 @@ class _PartnerDetailPageState extends ConsumerState<PartnerDetailPage> {
                         label: '性别',
                         value: genderLabels[companion.gender] ?? '未知',
                       ),
+                      if (companion.birthday != null) ...[
+                        const SizedBox(height: 12),
+                        _buildInfoRow(
+                          context,
+                          icon: Icons.cake_outlined,
+                          label: '生日',
+                          value: _formatDate(companion.birthday),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       _buildInfoRow(
                         context,

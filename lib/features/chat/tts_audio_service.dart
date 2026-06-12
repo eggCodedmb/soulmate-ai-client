@@ -39,20 +39,11 @@ class TtsAudioService {
 
     _playerStateSubscription = _player.playerStateStream.listen((state) {
       final wasPlaying = _isPlaying;
-      final completed = state.processingState == ProcessingState.completed;
+      final isCompleted = state.processingState == ProcessingState.completed;
       
-      _isPlaying = state.playing && !completed;
+      _isPlaying = state.playing && !isCompleted;
       
-      if (wasPlaying && !_isPlaying) {
-        if (completed) {
-          _playingMessageKey = null;
-          _queuedFilePaths.clear();
-          // 注意：不要在完成时直接 stop()，因为可能还会有新的段落加入
-          // 但如果确实播完了所有段落，清空播放列表
-          _playlist.clear();
-        }
-        _onStateChanged?.call();
-      } else {
+      if (wasPlaying != _isPlaying || isCompleted) {
         _onStateChanged?.call();
       }
     });
@@ -61,6 +52,7 @@ class TtsAudioService {
   bool get isPlaying => _isPlaying;
   String? get playingMessageKey => _playingMessageKey;
   bool get isConfigured => _api.isConfigured;
+  ProcessingState get processingState => _player.processingState;
 
   /// 设置状态变化回调
   void setOnStateChanged(VoidCallback? callback) {
@@ -136,18 +128,25 @@ class TtsAudioService {
         _playingMessageKey = messageKey;
       }
 
-      // 避免重复添加同一文件（针对流式分段可能的重试逻辑）
+      // 避免重复添加同一文件
       if (_queuedFilePaths.contains(filePath)) return;
 
+      final source = AudioSource.file(filePath);
       _queuedFilePaths.add(filePath);
-      await _playlist.add(AudioSource.file(filePath));
+      await _playlist.add(source);
 
-      // 如果当前没在播放，且这是第一段，开始播放
-      if (!_isPlaying && _playlist.length > 0) {
-        // 如果处于 completed 状态（之前播完了），需要 seek 到 0
-        if (_player.processingState == ProcessingState.completed) {
-          await _player.seek(Duration.zero);
+      // 如果当前没在播放，开始播放
+      if (!_isPlaying) {
+        // 如果已经播完了之前的片段，或者处于 idle 状态，需要确保从正确的位置开始
+        if (_player.processingState == ProcessingState.completed || 
+            _player.processingState == ProcessingState.idle) {
+          // 总是尝试 seek 到当前播放列表的末尾（即刚刚添加的这一段）
+          final targetIndex = _playlist.length - 1;
+          if (targetIndex >= 0) {
+            await _player.seek(Duration.zero, index: targetIndex);
+          }
         }
+        
         await _player.play();
         _isPlaying = true;
         _onStateChanged?.call();
@@ -161,7 +160,15 @@ class TtsAudioService {
   Future<void> play(String filePath, String messageKey) async {
     await stop();
     _playingMessageKey = messageKey;
+    
+    // 强制重置
+    await _player.stop();
+    await _playlist.clear();
+    _queuedFilePaths.clear();
+    
     await enqueue(filePath, messageKey);
+    // 确保从头开始
+    await _player.seek(Duration.zero, index: 0);
   }
 
   /// 暂停/继续播放
@@ -169,6 +176,9 @@ class TtsAudioService {
     if (_isPlaying) {
       await _player.pause();
     } else {
+      if (_player.processingState == ProcessingState.completed) {
+        await _player.seek(Duration.zero, index: 0);
+      }
       await _player.play();
     }
   }
