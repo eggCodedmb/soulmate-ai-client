@@ -1232,8 +1232,8 @@ class _EditPartnerSheetState extends ConsumerState<EditPartnerSheet> {
     );
   }
 
-  Widget _buildVoiceProfilePicker(ColorScheme scheme, bool isLight, dynamic ttsApi) {
-    if (!ttsApi.isConfigured) {
+  Widget _buildVoiceProfilePicker(ColorScheme scheme, bool isLight, TtsApiClient ttsApi) {
+    if (ttsApi.isConfigured == false) {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(

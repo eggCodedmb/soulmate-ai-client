@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/network/api_service.dart';
 import '../../shared/models/subscription.dart';
+import '../../shared/models/subscription_status.dart';
 import 'payment_method_page.dart';
 import 'payment_webview_page.dart';
 import 'providers/subscription_providers.dart';
@@ -25,6 +26,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
   Widget build(BuildContext context) {
     final plansAsync = ref.watch(subscriptionPlansProvider);
     final subscriptionAsync = ref.watch(currentSubscriptionProvider);
+    final statusAsync = ref.watch(subscriptionStatusProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -41,6 +43,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
                   await Future.wait([
                     ref.read(subscriptionPlansProvider.notifier).refresh(),
                     ref.read(currentSubscriptionProvider.notifier).refresh(),
+                    ref.read(subscriptionStatusProvider.notifier).refresh(),
                   ]);
                 },
                 color: AppColors.brandPink,
@@ -48,7 +51,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   children: [
                     // 区域 1: 当前订阅状态
-                    _buildCurrentStatus(context, subscriptionAsync, isDark),
+                    _buildCurrentStatus(context, statusAsync, isDark),
                     const SizedBox(height: 24),
                     // 区域 2: 套餐选择
                     _buildPlanSection(context, plansAsync, subscriptionAsync, isDark),
@@ -101,7 +104,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
 
   Widget _buildCurrentStatus(
     BuildContext context,
-    AsyncValue<UserSubscription?> subscriptionAsync,
+    AsyncValue<SubscriptionStatus?> subscriptionAsync,
     bool isDark,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -129,17 +132,23 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
             ),
           ),
         ),
-        error: (e, _) => _buildFreeUserStatus(context, isDark),
-        data: (subscription) {
-          if (subscription == null) return _buildFreeUserStatus(context, isDark);
-          return _buildSubscribedStatus(context, subscription, isDark);
+        error: (e, _) => _buildFreeUserStatus(context, null, isDark),
+        data: (status) {
+          if (status == null || status.planCode == 'FREE') {
+            return _buildFreeUserStatus(context, status, isDark);
+          }
+          return _buildSubscribedStatus(context, status, isDark);
         },
       ),
     );
   }
 
   /// 免费用户状态
-  Widget _buildFreeUserStatus(BuildContext context, bool isDark) {
+  Widget _buildFreeUserStatus(BuildContext context, SubscriptionStatus? status, bool isDark) {
+    final usedMessages = status?.todayUsedMessages ?? 0;
+    final maxMessages = status?.maxDailyMessages ?? 50;
+    final progress = maxMessages > 0 ? (usedMessages / maxMessages).clamp(0.0, 1.0) : 0.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -212,7 +221,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
                     ),
                   ),
                   Text(
-                    '9 / 30 条',
+                    '$usedMessages / $maxMessages 条',
                     style: TextStyle(
                       color: isDark ? Colors.white : Colors.black,
                       fontSize: 14,
@@ -225,7 +234,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: LinearProgressIndicator(
-                  value: 0.3,
+                  value: progress,
                   minHeight: 10,
                   backgroundColor: isDark
                       ? Colors.white.withOpacity(0.1)
@@ -278,14 +287,16 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
   /// 已订阅用户状态
   Widget _buildSubscribedStatus(
     BuildContext context,
-    UserSubscription subscription,
+    SubscriptionStatus status,
     bool isDark,
   ) {
-    final planName = _getPlanNameById(subscription.planId);
-    final endDate = subscription.endTime;
+    final planName = status.planName ?? '未知套餐';
+    final endDate = status.expireTime ?? DateTime.now();
     final dateStr =
         '${endDate.year}/${endDate.month.toString().padLeft(2, '0')}/${endDate.day.toString().padLeft(2, '0')}';
-    final daysLeft = endDate.difference(DateTime.now()).inDays;
+    final daysLeft = endDate.difference(DateTime.now()).inDays > 0 
+        ? endDate.difference(DateTime.now()).inDays 
+        : 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -397,13 +408,31 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
               ),
               const SizedBox(height: 12),
               _buildInfoRow(
-                Icons.autorenew_rounded,
-                '自动续费',
-                subscription.autoRenew == 1 ? '已开启' : '已关闭',
+                Icons.mark_chat_read_rounded,
+                '消息额度',
+                status.maxDailyMessages == -1 
+                    ? '无限量' 
+                    : '剩余 ${status.remainingMessages} / ${status.maxDailyMessages}',
                 isDark,
-                valueColor: subscription.autoRenew == 1
+                valueColor: status.maxDailyMessages == -1 || (status.remainingMessages ?? 0) > 0
                     ? const Color(0xFF4CAF50)
-                    : Colors.orange,
+                    : Colors.red,
+              ),
+              const SizedBox(height: 12),
+              Divider(
+                color: isDark
+                    ? Colors.white.withOpacity(0.08)
+                    : Colors.black.withOpacity(0.06),
+                height: 1,
+              ),
+              const SizedBox(height: 12),
+              _buildInfoRow(
+                Icons.people_alt_rounded,
+                '伴侣名额',
+                status.maxCompanions == -1
+                    ? '无限量'
+                    : '已用 ${status.currentCompanions} / ${status.maxCompanions}',
+                isDark,
               ),
             ],
           ),
@@ -1348,3 +1377,4 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
     );
   }
 }
+

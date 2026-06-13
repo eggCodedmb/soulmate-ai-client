@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/api_service.dart';
 import '../../../shared/models/subscription.dart';
+import '../../../shared/models/subscription_status.dart';
 
 /// 套餐列表 Provider
 final subscriptionPlansProvider =
@@ -46,3 +47,27 @@ class CurrentSubscriptionNotifier extends AsyncNotifier<UserSubscription?> {
     state = await AsyncValue.guard(build);
   }
 }
+
+/// 提供当前订阅额度状态
+final subscriptionStatusProvider =
+    AsyncNotifierProvider<SubscriptionStatusNotifier, SubscriptionStatus?>(
+  SubscriptionStatusNotifier.new,
+);
+
+class SubscriptionStatusNotifier extends AsyncNotifier<SubscriptionStatus?> {
+  @override
+  Future<SubscriptionStatus?> build() async {
+    final api = ref.watch(apiServiceProvider);
+    try {
+      return await api.getSubscriptionStatus();
+    } on Exception catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(build);
+  }
+}
+

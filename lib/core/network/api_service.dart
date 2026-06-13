@@ -11,6 +11,7 @@ import '../../shared/models/message.dart';
 import '../../shared/models/memory.dart';
 import '../../shared/models/page_result.dart';
 import '../../shared/models/subscription.dart';
+import '../../shared/models/subscription_status.dart';
 import '../../shared/models/reminder.dart';
 import 'api_client.dart';
 
@@ -337,13 +338,19 @@ class ApiService {
         .map((e) => SubscriptionPlan.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+/// 获取当前订阅
+Future<UserSubscription> getCurrentSubscription() async {
+  final response = await _dio.get('/api/subscription/current');
+  return UserSubscription.fromJson(_unwrap(response) as Map<String, dynamic>);
+}
 
-  /// 获取当前订阅
-  Future<UserSubscription> getCurrentSubscription() async {
-    final response = await _dio.get('/api/subscription/current');
-    return UserSubscription.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
+/// 获取用户当前额度状态
+Future<SubscriptionStatus> getSubscriptionStatus() async {
+  final response = await _dio.get('/api/subscription/status');
+  return SubscriptionStatus.fromJson(_unwrap(response) as Map<String, dynamic>);
+}
 
+// --- 提醒管理 ---
   // ==================== 支付模块 ====================
 
   /// 创建支付订单

@@ -601,7 +601,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 ? Colors.white.withValues(alpha: 0.6)
                 : Colors.black.withValues(alpha: 0.4),
           ),
-          onPressed: () => _showChatOptions(context, isDark),
+          onPressed: () {
+            if (_companionId != null) {
+              context.push('/partners/detail/$_companionId');
+            }
+          },
         ),
       ],
     );
@@ -1522,65 +1526,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 : isDark
                     ? Colors.white.withValues(alpha: 0.25)
                     : Colors.black.withValues(alpha: 0.2),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ==================== 菜单 ====================
-
-  void _showChatOptions(BuildContext context, bool isDark) {
-    HapticFeedback.lightImpact();
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 拖拽手柄
-              Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: (isDark ? Colors.white : Colors.black)
-                      .withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.person_outline_rounded),
-                title: const Text('伴侣详情'),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  if (_companionId != null) {
-                    context.push('/partners/detail/$_companionId');
-                  }
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.refresh_rounded),
-                title: const Text('刷新消息'),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _refreshMessages();
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
           ),
         ),
       ),
