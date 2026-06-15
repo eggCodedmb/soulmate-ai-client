@@ -55,6 +55,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   List<String> _companionPersonalities = [];
   TtsConfig? _companionTtsConfig;
   late final int _conversationId;
+  late final TtsNotifier _ttsNotifier;
 
   // 情绪映射
   static const _emotionMap = {
@@ -71,6 +72,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   @override
   void initState() {
     super.initState();
+    _ttsNotifier = ref.read(ttsProvider.notifier);
     _conversationId = int.parse(widget.conversationId);
     _messageController.addListener(() {
       final hasText = _messageController.text.trim().isNotEmpty;
@@ -92,7 +94,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void dispose() {
     _streamCancelToken?.cancel('页面退出');
     // 停止 TTS 播放
-    ref.read(ttsProvider.notifier).stop();
+    _ttsNotifier.stop();
     _messageController.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();

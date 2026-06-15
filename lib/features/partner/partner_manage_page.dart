@@ -9,9 +9,9 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
-import '../../core/theme/app_shadows.dart';
 import '../../shared/models/companion.dart';
 import '../../shared/models/conversation.dart';
+import '../../shared/widgets/soul_toast.dart';
 import 'edit_partner_sheet.dart';
 
 /// 伴侣管理页
@@ -84,23 +84,11 @@ class _PartnerManagePageState extends ConsumerState<PartnerManagePage> {
         _companions.removeWhere((c) => c.id == companion.id);
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${companion.name} 已删除'),
-            action: SnackBarAction(
-              label: '撤销',
-              onPressed: () {
-                // TODO: 实现撤销删除
-              },
-            ),
-          ),
-        );
+        SoulToast.success(context, '${companion.name} 已删除');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: $e')),
-        );
+        SoulToast.error(context, '删除失败: $e');
       }
     }
   }

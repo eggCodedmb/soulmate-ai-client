@@ -7,6 +7,7 @@ import '../../core/network/api_service.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/companion.dart';
 import '../../shared/models/conversation.dart';
+import '../../shared/widgets/soul_toast.dart';
 import 'edit_partner_sheet.dart';
 
 /// 伴侣详情页
@@ -102,16 +103,12 @@ class _PartnerDetailPageState extends ConsumerState<PartnerDetailPage> {
                 final apiService = ref.read(apiServiceProvider);
                 await apiService.deleteCompanion(_companion!.id);
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('伴侣已删除')),
-                  );
+                  SoulToast.success(context, '伴侣已删除');
                   context.pop();
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('删除失败: $e')),
-                  );
+                  SoulToast.error(context, '删除失败: $e');
                 }
               }
             },
