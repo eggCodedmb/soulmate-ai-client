@@ -346,6 +346,46 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
   }
 
+  Future<void> _deleteMessage(Message message) async {
+    try {
+      // 1. 从内存列表中移除 (立即更新 UI)
+      setState(() {
+        _messages.removeWhere((m) {
+          if (message.id > 0) {
+            return m.id == message.id;
+          } else {
+            // 对于发送失败的消息 (id == 0)，通过内容和创建时间判断
+            return m.id == 0 && m.content == message.content && m.createTime == message.createTime;
+          }
+        });
+      });
+
+      // 2. 如果是已成功发送的消息（id > 0），则从服务器和本地数据库删除
+      if (message.id > 0) {
+        // 从服务器删除
+        await ref.read(apiServiceProvider).deleteMessage(message.id);
+        // 从本地数据库删除
+        await MessageLocalStorage.instance.deleteMessage(message.id);
+
+        if (mounted) {
+          SoulToast.success(context, '消息已删除');
+        }
+      } else {
+        // 对于发送失败的消息，不需要请求接口和数据库，直接提示已被清除
+        if (mounted) {
+          SoulToast.success(context, '未发送消息已清除');
+        }
+      }
+    } catch (e) {
+      debugPrint('删除消息失败: $e');
+      if (mounted) {
+        SoulToast.error(context, '删除消息失败: ${e.toString()}');
+        // 发生错误时，重新加载列表恢复状态
+        _refreshMessages();
+      }
+    }
+  }
+
   Future<void> _refreshMessages() async {
     try {
       final apiService = ref.read(apiServiceProvider);
@@ -1878,7 +1918,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   ),
                   onTap: () {
                     Navigator.pop(context);
-                    // TODO: 实现删除消息
+                    _deleteMessage(message);
                   },
                 ),
               const SizedBox(height: 8),

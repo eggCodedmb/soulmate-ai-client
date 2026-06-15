@@ -152,6 +152,12 @@ class ApiService {
     _unwrap(response);
   }
 
+  /// 删除单条消息
+  Future<void> deleteMessage(int messageId) async {
+    final response = await _dio.delete('/api/message/$messageId');
+    _unwrap(response);
+  }
+
   // ==================== 对话与聊天模块 ====================
 
   /// 创建或获取对话
