@@ -58,7 +58,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final reminderId = int.parse(state.pathParameters['reminderId']!);
           final reminder = state.extra as Reminder?;
-          return IncomingCallPage(reminderId: reminderId, reminder: reminder);
+          final isOutgoing = state.uri.queryParameters['outgoing'] == 'true';
+          final conversationId = int.tryParse(state.uri.queryParameters['conversationId'] ?? '');
+          return IncomingCallPage(
+            reminderId: reminderId,
+            reminder: reminder,
+            isOutgoing: isOutgoing,
+            conversationId: conversationId,
+          );
         },
       ),
       // 主界面（底部Tab）

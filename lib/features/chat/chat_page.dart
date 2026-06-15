@@ -17,6 +17,7 @@ import '../../core/theme/app_shadows.dart';
 import '../../shared/models/companion.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/tts_config.dart';
+import '../../shared/models/reminder.dart';
 import '../../shared/widgets/soul_toast.dart';
 import 'tts_audio_service.dart';
 import 'tts_provider.dart';
@@ -43,6 +44,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _hasText = false;
   bool _isVoiceMode = false;
   bool _isTranscribing = false;
+  bool _showExtraMenu = false;
   CancelToken? _streamCancelToken;
   int _currentPage = 1;
   bool _hasMore = true;
@@ -74,6 +76,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       final hasText = _messageController.text.trim().isNotEmpty;
       if (hasText != _hasText) {
         setState(() => _hasText = hasText);
+      }
+    });
+    _inputFocusNode.addListener(() {
+      if (_inputFocusNode.hasFocus) {
+        setState(() {
+          _showExtraMenu = false;
+        });
       }
     });
     _loadMessages();
@@ -506,16 +515,49 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       body: _isLoading
           ? _buildLoadingState(context, isDark)
           : GestureDetector(
-              onTap: () => _inputFocusNode.unfocus(),
+              onTap: () {
+                _inputFocusNode.unfocus();
+                if (_showExtraMenu) {
+                  setState(() => _showExtraMenu = false);
+                }
+              },
               child: Column(
                 children: [
                   Expanded(
-                    child: _messages.isEmpty
-                        ? _buildEmptyState(context, isDark)
-                        : _buildMessageList(context, isDark),
+                    child: Stack(
+                      children: [
+                        if (_messages.isEmpty)
+                          _buildEmptyState(context, isDark)
+                        else
+                          _buildMessageList(context, isDark),
+                        if (_showExtraMenu)
+                          Positioned.fill(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _showExtraMenu = false;
+                                });
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.black.withValues(alpha: 0.0),
+                                      Colors.black.withValues(alpha: 0.4),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ).animate().fadeIn(duration: 200.ms),
+                          ),
+                      ],
+                    ),
                   ),
                   if (_isTyping) _buildTypingIndicator(context, isDark),
                   _buildInputBar(context, isDark),
+                  _buildMenuPanel(context, isDark),
                 ],
               ),
             ),
@@ -1244,6 +1286,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
+              // 菜单功能按钮（+ 按钮）
+              _buildMenuButton(isDark),
+              const SizedBox(width: 8),
               // 左侧：文本输入 或 语音按钮（带动画切换）
               Expanded(
                 child: AnimatedSwitcher(
@@ -1272,6 +1317,249 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         ),
       ),
     );
+  }
+
+  /// 输入框左侧菜单功能按钮
+  Widget _buildMenuButton(bool isDark) {
+    return GestureDetector(
+      onTap: _toggleExtraMenu,
+      child: Container(
+        height: 44,
+        width: 44,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F3F8),
+        ),
+        child: Icon(
+          Icons.add_rounded,
+          size: 24,
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.6)
+              : Colors.black.withValues(alpha: 0.5),
+        ),
+      ),
+    );
+  }
+
+  /// 展开或收起底部额外功能菜单
+  void _toggleExtraMenu() {
+    HapticFeedback.lightImpact();
+    if (_showExtraMenu) {
+      setState(() {
+        _showExtraMenu = false;
+      });
+    } else {
+      final hasKeyboard = _inputFocusNode.hasFocus;
+      if (hasKeyboard) {
+        _inputFocusNode.unfocus();
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) {
+            setState(() {
+              _showExtraMenu = true;
+            });
+          }
+        });
+      } else {
+        setState(() {
+          _showExtraMenu = true;
+        });
+      }
+    }
+  }
+
+  /// 构建底部抽屉菜单面板（与输入框同层，向上推）
+  Widget _buildMenuPanel(BuildContext context, bool isDark) {
+    final panelHeight = _showExtraMenu ? 260.0 : 0.0;
+    final backgroundColor = isDark ? const Color(0xFF1C1C1E) : Colors.white;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      height: panelHeight,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [
+          if (_showExtraMenu)
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, -4),
+            ),
+        ],
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: GestureDetector(
+        // 支持下滑手势收起菜单
+        onVerticalDragUpdate: (details) {
+          if (details.delta.dy > 8) {
+            setState(() {
+              _showExtraMenu = false;
+            });
+          }
+        },
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            child: Column(
+              children: [
+                // 顶部拖动手柄
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: (isDark ? Colors.white : Colors.black)
+                        .withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                SizedBox(
+                  height: 220, // 固定高度给内部 GridView 留出空间，避免 animation 过程中抖动或溢出
+                  child: GridView.count(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    childAspectRatio: 0.82,
+                    children: [
+                      _buildPanelMenuItem(
+                        icon: Icons.image_rounded,
+                        label: '相册',
+                        color: const Color(0xFF34C759),
+                        onTap: () {
+                          SoulToast.success(context, '打开相册');
+                        },
+                      ),
+                      _buildPanelMenuItem(
+                        icon: Icons.photo_camera_rounded,
+                        label: '拍摄',
+                        color: const Color(0xFF007AFF),
+                        onTap: () {
+                          SoulToast.success(context, '开启相机拍摄');
+                        },
+                      ),
+                      _buildPanelMenuItem(
+                        icon: Icons.phone_in_talk_rounded,
+                        label: 'AI通话',
+                        color: AppColors.brandPink,
+                        onTap: () {
+                          setState(() => _showExtraMenu = false);
+                          _startAiCall();
+                        },
+                      ),
+                      _buildPanelMenuItem(
+                        icon: Icons.location_on_rounded,
+                        label: '位置',
+                        color: const Color(0xFFFF9500),
+                        onTap: () {
+                          SoulToast.success(context, '获取位置信息');
+                        },
+                      ),
+                      _buildPanelMenuItem(
+                        icon: Icons.monetization_on_rounded,
+                        label: '红包',
+                        color: const Color(0xFFFF3B30),
+                        onTap: () {
+                          SoulToast.success(context, '发送红包');
+                        },
+                      ),
+                      _buildPanelMenuItem(
+                        icon: Icons.folder_rounded,
+                        label: '文件',
+                        color: const Color(0xFF5AC8FA),
+                        onTap: () {
+                          SoulToast.success(context, '发送文件');
+                        },
+                      ),
+                      _buildPanelMenuItem(
+                        icon: Icons.contact_phone_rounded,
+                        label: '名片',
+                        color: const Color(0xFF5856D6),
+                        onTap: () {
+                          SoulToast.success(context, '分享名片');
+                        },
+                      ),
+                      _buildPanelMenuItem(
+                        icon: Icons.settings_rounded,
+                        label: '设置',
+                        color: const Color(0xFF8E8E93),
+                        onTap: () {
+                          SoulToast.success(context, '应用设置');
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 菜单面板中的子项网格组件构建
+  Widget _buildPanelMenuItem({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(
+              icon,
+              size: 28,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              color: isDark ? Colors.white70 : Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 发起 AI 通话
+  void _startAiCall() {
+    if (_companionId == null) return;
+    
+    final mockReminder = Reminder(
+      id: 0,
+      userId: 0,
+      companionId: _companionId!,
+      companionName: _companionName ?? 'AI伴侣',
+      companionAvatarUrl: _companionAvatarUrl,
+      reminderTime: '',
+      textTemplate: '你好呀！很高兴接到你的电话，今天有什么想和我聊聊的吗？',
+      type: 'AI_CALL',
+    );
+
+    context.push('/call/0?outgoing=true&conversationId=$_conversationId', extra: mockReminder);
   }
 
   /// 文本输入框

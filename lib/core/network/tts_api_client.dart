@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -187,7 +188,7 @@ class TtsApiClient {
     }
   }
 
-  /// 生成小米 TTS 语音
+  /// 生成小米 TTS 语音（带重试机制）
   Future<Uint8List> generateMimo(TtsGenerateRequest request) async {
     final dio = _getDio();
     if (dio == null) {
@@ -218,47 +219,60 @@ class TtsApiClient {
       'stream': false,
     };
 
-    try {
-      final response = await dio.post<dynamic>(
-        '/chat/completions',
-        data: requestData,
-      );
+    int retryCount = 0;
+    const int maxRetries = 3;
 
-      final data = response.data as Map<String, dynamic>?;
-      if (data == null) {
-        throw TtsApiException('小米 TTS 返回空数据');
+    while (true) {
+      try {
+        final response = await dio.post<dynamic>(
+          '/chat/completions',
+          data: requestData,
+        );
+
+        final data = response.data as Map<String, dynamic>?;
+        if (data == null) {
+          throw TtsApiException('小米 TTS 返回空数据');
+        }
+
+        final choices = data['choices'] as List<dynamic>?;
+        if (choices == null || choices.isEmpty) {
+          throw TtsApiException('小米 TTS 返回 choices 为空');
+        }
+
+        final choice = choices[0] as Map<String, dynamic>?;
+        if (choice == null) {
+          throw TtsApiException('小米 TTS 返回 choice[0] 为空');
+        }
+
+        final message = choice['message'] as Map<String, dynamic>?;
+        if (message == null) {
+          throw TtsApiException('小米 TTS 返回 message 为空');
+        }
+
+        final audio = message['audio'] as Map<String, dynamic>?;
+        if (audio == null) {
+          throw TtsApiException('小米 TTS 返回 audio 为空');
+        }
+
+        final base64Data = audio['data'] as String?;
+        if (base64Data == null || base64Data.isEmpty) {
+          throw TtsApiException('小米 TTS 返回音频 Base64 为空');
+        }
+
+        return base64.decode(base64Data);
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 429 && retryCount < maxRetries) {
+          retryCount++;
+          // 指数退避: 1s, 2s, 4s
+          final delay = Duration(seconds: math.pow(2, retryCount - 1).toInt());
+          debugPrint('[TTS] 触发 429 频率限制，将在 ${delay.inSeconds}秒后进行第 $retryCount 次重试...');
+          await Future.delayed(delay);
+          continue;
+        }
+        throw TtsApiException(_formatError(e));
+      } on Object catch (e) {
+        throw TtsApiException('小米 TTS 合成失败: $e');
       }
-
-      final choices = data['choices'] as List<dynamic>?;
-      if (choices == null || choices.isEmpty) {
-        throw TtsApiException('小米 TTS 返回 choices 为空');
-      }
-
-      final choice = choices[0] as Map<String, dynamic>?;
-      if (choice == null) {
-        throw TtsApiException('小米 TTS 返回 choice[0] 为空');
-      }
-
-      final message = choice['message'] as Map<String, dynamic>?;
-      if (message == null) {
-        throw TtsApiException('小米 TTS 返回 message 为空');
-      }
-
-      final audio = message['audio'] as Map<String, dynamic>?;
-      if (audio == null) {
-        throw TtsApiException('小米 TTS 返回 audio 为空');
-      }
-
-      final base64Data = audio['data'] as String?;
-      if (base64Data == null || base64Data.isEmpty) {
-        throw TtsApiException('小米 TTS 返回音频 Base64 为空');
-      }
-
-      return base64.decode(base64Data);
-    } on DioException catch (e) {
-      throw TtsApiException(_formatError(e));
-    } on Object catch (e) {
-      throw TtsApiException('小米 TTS 合成失败: $e');
     }
   }
 
@@ -276,18 +290,30 @@ class TtsApiClient {
       throw TtsApiException('TTS 服务器未配置，请在设置中配置 TTS 服务器地址');
     }
 
-    try {
-      final response = await dio.post<List<int>>(
-        '/generate',
-        data: request.toJson(),
-        options: Options(
-          responseType: ResponseType.bytes,
-          receiveTimeout: const Duration(seconds: 120),
-        ),
-      );
-      return Uint8List.fromList(response.data!);
-    } on DioException catch (e) {
-      throw TtsApiException(_formatError(e));
+    int retryCount = 0;
+    const int maxRetries = 3;
+
+    while (true) {
+      try {
+        final response = await dio.post<List<int>>(
+          '/generate',
+          data: request.toJson(),
+          options: Options(
+            responseType: ResponseType.bytes,
+            receiveTimeout: const Duration(seconds: 120),
+          ),
+        );
+        return Uint8List.fromList(response.data!);
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 429 && retryCount < maxRetries) {
+          retryCount++;
+          final delay = Duration(seconds: math.pow(2, retryCount - 1).toInt());
+          debugPrint('[TTS] 触发 429 频率限制，将在 ${delay.inSeconds}秒后进行第 $retryCount 次重试...');
+          await Future.delayed(delay);
+          continue;
+        }
+        throw TtsApiException(_formatError(e));
+      }
     }
   }
 
@@ -307,6 +333,7 @@ class TtsApiClient {
       throw TtsApiException('TTS 服务器未配置，请在设置中配置 TTS 服务器地址');
     }
 
+    // 对于流式接口，如果开始传输后报错 429 较难重试，这里仅在初始连接阶段处理 429
     try {
       final response = await dio.post<ResponseBody>(
         '/generate/stream',
@@ -322,6 +349,7 @@ class TtsApiClient {
         yield Uint8List.fromList(chunk);
       }
     } on DioException catch (e) {
+      // 流式接口目前不实现重试逻辑，因为部分数据可能已经 yield 过了
       throw TtsApiException(_formatError(e));
     }
   }
