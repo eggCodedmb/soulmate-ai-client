@@ -9,6 +9,7 @@ import '../../shared/models/tts_config.dart';
 import '../../shared/models/conversation.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/memory.dart';
+import '../../shared/models/memory_stats.dart';
 import '../../shared/models/page_result.dart';
 import '../../shared/models/subscription.dart';
 import '../../shared/models/subscription_status.dart';
@@ -314,6 +315,19 @@ class ApiService {
     return data
         .map((e) => Memory.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// 获取记忆统计数据
+  Future<MemoryStats> getMemoryStats({int? companionId}) async {
+    final queryParams = <String, dynamic>{};
+    if (companionId != null) queryParams['companionId'] = companionId;
+
+    final response = await _dio.get(
+      '/api/memory/stats',
+      queryParameters: queryParams,
+    );
+    final data = _unwrap(response) as Map<String, dynamic>;
+    return MemoryStats.fromJson(data);
   }
 
   /// 更新记忆

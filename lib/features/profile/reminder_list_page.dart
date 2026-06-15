@@ -8,6 +8,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
 import '../../core/services/reminder_scheduler_service.dart';
 import '../../shared/models/reminder.dart';
+import '../../shared/widgets/soul_toast.dart';
 
 class ReminderListPage extends ConsumerStatefulWidget {
   const ReminderListPage({super.key});
@@ -40,9 +41,7 @@ class _ReminderListPageState extends ConsumerState<ReminderListPage> {
     } catch (e) {
       debugPrint('获取提醒列表失败: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载失败: $e')),
-        );
+        SoulToast.error(context, '加载失败: $e');
       }
     } finally {
       if (mounted) {
@@ -94,9 +93,7 @@ class _ReminderListPageState extends ConsumerState<ReminderListPage> {
         }
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败: $e')),
-        );
+        SoulToast.error(context, '操作失败: $e');
       }
     }
   }
@@ -110,15 +107,11 @@ class _ReminderListPageState extends ConsumerState<ReminderListPage> {
         _audioCachedMap.remove(reminder.id);
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('提醒已成功删除')),
-        );
+        SoulToast.success(context, '提醒已成功删除');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: $e')),
-        );
+        SoulToast.error(context, '删除失败: $e');
       }
     }
   }

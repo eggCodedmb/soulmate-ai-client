@@ -9,6 +9,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_shadows.dart';
 import '../../shared/models/memory.dart';
 import '../../shared/models/companion.dart';
+import '../../shared/models/memory_stats.dart';
 import 'memory_edit_sheet.dart';
 
 /// 记忆管理页
@@ -29,6 +30,7 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   bool _isSearchVisible = false;
+  MemoryStats _stats = const MemoryStats(totalMemories: 0, averageImportance: 0.0, categoryCount: 0);
 
   @override
   void initState() {
@@ -49,11 +51,13 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
       final results = await Future.wait([
         apiService.getMemoryList(),
         apiService.getCompanionList(),
+        apiService.getMemoryStats(companionId: _selectedCompanionId),
       ]);
       if (mounted) {
         setState(() {
           _allMemories = results[0] as List<Memory>;
           _companions = results[1] as List<Companion>;
+          _stats = results[2] as MemoryStats;
         });
       }
     } on Exception catch (e) {
@@ -73,15 +77,30 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
   Future<void> _refreshData() async {
     try {
       final apiService = ref.read(apiServiceProvider);
-      final memories = await apiService.getMemoryList(
-        companionId: _selectedCompanionId,
-        category: _selectedCategory == 'all' ? null : _selectedCategory,
-      );
+      final results = await Future.wait([
+        apiService.getMemoryList(),
+        apiService.getMemoryStats(companionId: _selectedCompanionId),
+      ]);
       if (mounted) {
-        setState(() => _allMemories = memories);
+        setState(() {
+          _allMemories = results[0] as List<Memory>;
+          _stats = results[1] as MemoryStats;
+        });
       }
     } on Exception catch (e) {
       debugPrint('刷新记忆数据失败: $e');
+    }
+  }
+
+  Future<void> _loadStats() async {
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      final stats = await apiService.getMemoryStats(companionId: _selectedCompanionId);
+      if (mounted) {
+        setState(() => _stats = stats);
+      }
+    } on Exception catch (e) {
+      debugPrint('加载统计数据失败: $e');
     }
   }
 
@@ -119,14 +138,6 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
     return companion?.name ?? '未知伴侣';
   }
 
-  int get _totalMemories => _allMemories.length;
-
-  double get _averageImportance {
-    if (_allMemories.isEmpty) return 0;
-    return _allMemories.fold<int>(0, (sum, m) => sum + m.importance) /
-        _allMemories.length;
-  }
-
   Future<void> _deleteMemory(Memory memory) async {
     try {
       final apiService = ref.read(apiServiceProvider);
@@ -134,6 +145,7 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
       setState(() {
         _allMemories.removeWhere((m) => m.id == memory.id);
       });
+      _loadStats();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('记忆已删除')),
@@ -184,6 +196,7 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
         _allMemories[index] = updatedMemory;
       }
     });
+    _loadStats();
   }
 
   @override
@@ -428,7 +441,12 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
               context,
               label: '全部伴侣',
               isSelected: _selectedCompanionId == null,
-              onTap: () => setState(() => _selectedCompanionId = null),
+              onTap: () {
+                if (_selectedCompanionId != null) {
+                  setState(() => _selectedCompanionId = null);
+                  _loadStats();
+                }
+              },
             ),
             ..._companions.map((companion) {
               return _buildCompanionChip(
@@ -438,8 +456,12 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
                 avatarUrl: companion.avatarUrl != null && companion.avatarUrl!.isNotEmpty
                     ? getFullUrl(ref, companion.avatarUrl!)
                     : null,
-                onTap: () =>
-                    setState(() => _selectedCompanionId = companion.id),
+                onTap: () {
+                  if (_selectedCompanionId != companion.id) {
+                    setState(() => _selectedCompanionId = companion.id);
+                    _loadStats();
+                  }
+                },
               );
             }),
           ],
@@ -611,7 +633,7 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
                 context,
                 icon: Icons.auto_awesome_rounded,
                 label: '总记忆',
-                value: '$_totalMemories',
+                value: '${_stats.totalMemories}',
                 color: AppColors.brandPink,
               ),
               _buildStatDivider(context),
@@ -619,7 +641,7 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
                 context,
                 icon: Icons.star_rounded,
                 label: '平均重要度',
-                value: _averageImportance.toStringAsFixed(1),
+                value: _stats.averageImportance.toStringAsFixed(1),
                 color: AppColors.brandLavender,
               ),
               _buildStatDivider(context),
@@ -627,7 +649,7 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
                 context,
                 icon: Icons.category_rounded,
                 label: '分类数',
-                value: '${_allMemories.map((m) => m.category).toSet().length}',
+                value: '${_stats.categoryCount}',
                 color: AppColors.brandWarmPeach,
               ),
             ],
@@ -970,6 +992,7 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
                     _selectedCategory = 'all';
                     _selectedCompanionId = null;
                   });
+                  _loadStats();
                 },
                 icon: const Icon(Icons.filter_alt_off_rounded),
                 label: const Text('清除筛选'),

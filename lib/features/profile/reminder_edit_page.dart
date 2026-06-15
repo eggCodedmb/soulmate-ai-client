@@ -8,6 +8,7 @@ import '../../core/network/api_service.dart';
 import '../../core/services/reminder_scheduler_service.dart';
 import '../../shared/models/reminder.dart';
 import '../../shared/models/companion.dart';
+import '../../shared/widgets/soul_toast.dart';
 
 class ReminderEditPage extends ConsumerStatefulWidget {
   final Reminder? reminder;
@@ -145,9 +146,7 @@ class _ReminderEditPageState extends ConsumerState<ReminderEditPage> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedCompanionId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请选择呼叫伴侣')),
-      );
+      SoulToast.warning(context, '请选择呼叫伴侣');
       return;
     }
 
@@ -224,9 +223,7 @@ class _ReminderEditPageState extends ConsumerState<ReminderEditPage> {
       if (mounted) {
         // 关闭 Dialog
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败: $e')),
-        );
+        SoulToast.error(context, '保存失败: $e');
       }
     } finally {
       if (mounted) {

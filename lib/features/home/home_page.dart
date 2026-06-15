@@ -895,12 +895,14 @@ class _HomePageState extends ConsumerState<HomePage> with RouteAware {
       'shared_experience': AppColors.brandWarmPeach,
       'preference': AppColors.brandPink,
       'habit': const Color(0xFFFF9500),
+      'private_preference': const Color(0xFFE91E63),
     };
     final categoryIcons = {
       'personal_info': Icons.info_outline_rounded,
       'shared_experience': Icons.auto_stories_rounded,
       'preference': Icons.favorite_rounded,
       'habit': Icons.star_rounded,
+      'private_preference': Icons.vpn_key_rounded,
     };
 
     final color = categoryColors[memory.category] ?? AppColors.brandPink;

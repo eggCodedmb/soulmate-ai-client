@@ -47,6 +47,12 @@ const List<MemoryCategoryConfig> memoryCategories = [
     icon: Icons.star_rounded,
     color: Color(0xFFFF9500),
   ),
+  MemoryCategoryConfig(
+    key: 'private_preference',
+    label: '私密爱好',
+    icon: Icons.vpn_key_rounded,
+    color: Color(0xFFE91E63),
+  ),
 ];
 
 /// 根据分类 key 获取配置
