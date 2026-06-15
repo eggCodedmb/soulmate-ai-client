@@ -1,13 +1,14 @@
 import 'dart:io';
-import 'dart:ui';
+import 'dart:ui' hide Codec;
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:convert';
+import 'dart:convert' hide Codec;
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -56,6 +57,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     with TickerProviderStateMixin {
   
   Reminder? _reminder;
+  int? _resolvedConversationId;
   Companion? _companion;
   bool _isLoading = false;
   bool _isConnected = false;
@@ -76,7 +78,8 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
   bool _isBackgroundGreetingSent = false;
   final List<String> _pendingAudioPaths = [];
   
-  final AudioPlayer _ringtonePlayer = AudioPlayer();
+  final FlutterSoundPlayer _ringtonePlayer = FlutterSoundPlayer();
+  bool _isPlayingRingtone = false;
   
   // 振铃动效 Controller
   late AnimationController _rippleController;
@@ -92,7 +95,13 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
   @override
   void initState() {
     super.initState();
+    _ringtonePlayer.openPlayer().then((_) {
+      debugPrint('[IncomingCall] Ringtone player opened successfully');
+    }).catchError((e) {
+      debugPrint('[IncomingCall] Failed to open ringtone player: $e');
+    });
     _reminder = widget.reminder;
+    _resolvedConversationId = widget.conversationId;
     
     _rippleController = AnimationController(
       vsync: this,
@@ -154,18 +163,8 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
           _stopUserRecording(send: false);
         }
       } else if (!isPlaying && (_callState == CallSessionState.speaking || _callState == CallSessionState.thinking)) {
-        // AI 播放完成或停止（涵盖 Completed/Idle/Error 等所有非播放状态），必须流已结束且无 pending 的 TTS 生成任务，才切换到倾听状态
-        if (_isStreamDone && _pendingTtsCount == 0) {
-          setState(() {
-            _callState = CallSessionState.listening;
-          });
-          // 仅在开启了顺承模式时才自动触发录音
-          if (_isContinuousMode) {
-            _startUserRecording();
-          }
-        } else {
-          debugPrint('[IncomingCall] AI播放列表暂时空闲，等待后续音频生成... streamDone: $_isStreamDone, pendingTtsCount: $_pendingTtsCount');
-        }
+        // AI 播放完成或停止，进行统一断句与结束判定
+        _checkIfAllDone();
       }
     });
     return service;
@@ -208,22 +207,10 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     // 3. 处理呼入/呼出逻辑
     if (!widget.isOutgoing) {
       // 播放振铃（循环播放本地电话铃声）
-      try {
-        await _ringtonePlayer.setAsset('assets/audio/phone_ringtone.wav');
-        await _ringtonePlayer.setLoopMode(LoopMode.one);
-        _ringtonePlayer.play();
-      } catch (e) {
-        debugPrint('播放铃声失败: $e');
-      }
+      _startRingtone();
     } else {
       // 从聊天页主动发起的 AI 通话：播放呼叫铃声
-      try {
-        await _ringtonePlayer.setAsset('assets/audio/phone_ringtone.wav');
-        await _ringtonePlayer.setLoopMode(LoopMode.one);
-        _ringtonePlayer.play();
-      } catch (e) {
-        debugPrint('播放铃声失败: $e');
-      }
+      _startRingtone();
 
       // 铃声播放同时，后台立刻发送指令让 AI 开始思考
       _isBackgroundGreetingSent = true;
@@ -243,7 +230,8 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     _callTimer?.cancel();
     _rippleController.dispose();
     _waveController.dispose();
-    _ringtonePlayer.dispose();
+    _stopRingtone();
+    _ringtonePlayer.closePlayer();
     _ttsAudioService.dispose();
     _recorder.dispose();
     _channel?.sink.close();
@@ -253,7 +241,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
   // 挂断
   Future<void> _hangup() async {
     HapticFeedback.mediumImpact();
-    _ringtonePlayer.stop();
+    _stopRingtone();
     _ttsAudioService.stop();
     
     await ref.read(vadNotifierProvider.notifier).stopListening();
@@ -268,7 +256,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
   // 接听
   Future<void> _answer() async {
     HapticFeedback.heavyImpact();
-    _ringtonePlayer.stop();
+    _stopRingtone();
     _rippleController.stop();
 
     setState(() {
@@ -359,9 +347,16 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       final json = jsonDecode(data as String) as Map<String, dynamic>;
       final action = json['action'];
       if (action == 'speak') {
-        final content = json['content'] as String?;
+        final audioBase64 = json['audio'] as String?;
         final done = json['done'] as bool? ?? false;
         final error = json['error'] as String?;
+        final conversationId = json['conversationId'] as int?;
+        
+        if (conversationId != null && _resolvedConversationId == null) {
+          setState(() {
+            _resolvedConversationId = conversationId;
+          });
+        }
         
         if (error != null) {
           debugPrint('[IncomingCall] 服务端返回错误: $error');
@@ -371,6 +366,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
             );
           }
           _isStreamDone = true;
+          _checkIfAllDone();
           return;
         }
         
@@ -378,11 +374,38 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
           _isStreamDone = true;
         }
         
-        if (content != null && content.isNotEmpty) {
-          _sentenceBuffer += content;
-          _checkAndPlaySentence(done: done);
+        if (audioBase64 != null && audioBase64.isNotEmpty) {
+          _pendingTtsCount++;
+          final index = _messageIndex;
+          _ttsTaskChain = (_ttsTaskChain ?? Future.value()).then((_) async {
+            try {
+              final bytes = base64Decode(audioBase64);
+              final tempDir = await getTemporaryDirectory();
+              final key = md5.convert(bytes).toString();
+              final file = File('${tempDir.path}/tts_cache/$key.wav');
+              if (!await file.parent.exists()) {
+                await file.parent.create(recursive: true);
+              }
+              await file.writeAsBytes(bytes);
+              
+              if (mounted) {
+                if (_isConnected) {
+                  await _ttsAudioService.enqueue(file.path, 'call_msg_$index');
+                } else {
+                  _pendingAudioPaths.add(file.path);
+                }
+              }
+            } finally {
+              if (index == _messageIndex) {
+                _pendingTtsCount--;
+                _checkIfAllDone();
+              }
+            }
+          }).catchError((e) {
+            debugPrint('[IncomingCall] 播放音频错误: $e');
+          });
         } else if (done) {
-          _checkAndPlaySentence(done: true);
+          _checkIfAllDone();
         }
       } else if (action == 'interrupt-ack') {
         debugPrint('[IncomingCall] 收到打断 ACK 确认');
@@ -394,119 +417,31 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
 
   void _onWebSocketDone() {
     debugPrint('[IncomingCall] WebSocket 连接关闭');
+    if (!_isStreamDone) {
+      _isStreamDone = true;
+      _checkIfAllDone();
+    }
   }
 
   void _onWebSocketError(dynamic error) {
     debugPrint('[IncomingCall] WebSocket 错误: $error');
+    if (!_isStreamDone) {
+      _isStreamDone = true;
+      _checkIfAllDone();
+    }
   }
 
-  String _cleanTextForVoice(String text) {
-    // 移除星号及其包裹的非言语内容
-    text = text.replaceAll(RegExp(r'\*.*?\*'), '');
-    // 移除各种括号及其包裹的内容（包含中英文括号、方括号）
-    text = text.replaceAll(RegExp(r'\(.*?\)|（.*?）'), '');
-    text = text.replaceAll(RegExp(r'\[.*?\]|【.*?】'), '');
-    return text.trim();
-  }
-
-  Future<void> _checkAndPlaySentence({bool done = false}) async {
-    final companion = _companion;
-    final config = getEffectiveTtsConfig(companion?.ttsConfig);
-    if (config == null) {
-      debugPrint('[IncomingCall] 无法获取有效的 TTS 配置');
-      return;
-    }
-    
-    // 只在整句结束符（句号、问号、感叹号、分号、换行符）处进行断句，避免在逗号处断句导致语音读起来断断续续
-    final RegExp punctuation = RegExp(r'[。！？\.\?!;\n]');
-    
-    if (done) {
-      final text = _sentenceBuffer.trim();
-      if (text.isNotEmpty) {
-        _sentenceBuffer = '';
-        final cleanedText = _cleanTextForVoice(text);
-        if (cleanedText.isNotEmpty) {
-          final index = _messageIndex;
-          debugPrint('[IncomingCall] 播放最后一段 AI 语音: "$cleanedText" (原始文本: "$text")');
-          
-          _pendingTtsCount++;
-          _ttsTaskChain = (_ttsTaskChain ?? Future.value()).then((_) async {
-            try {
-              if (!mounted) return;
-              final path = await _ttsAudioService.generateAndCache(cleanedText, config);
-              if (path != null && mounted) {
-                if (_isConnected) {
-                  await _ttsAudioService.enqueue(path, 'call_msg_$index');
-                } else {
-                  _pendingAudioPaths.add(path);
-                }
-              }
-            } finally {
-              debugPrint('[IncomingCall] finally block(done): pendingTtsCount before decrement: $_pendingTtsCount');
-              _pendingTtsCount--;
-              _checkIfAllDone();
-            }
-          }).catchError((e) {
-            debugPrint('[IncomingCall] TTS播放链错误(done): $e');
-          });
-        } else {
-          _checkIfAllDone();
-        }
-      } else {
-        _checkIfAllDone();
-      }
-      return;
-    }
-    
-    int lastPuncIndex = -1;
-    for (int i = _sentenceBuffer.length - 1; i >= 0; i--) {
-      if (punctuation.hasMatch(_sentenceBuffer[i])) {
-        lastPuncIndex = i;
-        break;
-      }
-    }
-    
-    if (lastPuncIndex != -1) {
-      final text = _sentenceBuffer.substring(0, lastPuncIndex + 1).trim();
-      _sentenceBuffer = _sentenceBuffer.substring(lastPuncIndex + 1);
-      
-      if (text.isNotEmpty) {
-        final cleanedText = _cleanTextForVoice(text);
-        if (cleanedText.isNotEmpty) {
-          final index = _messageIndex;
-          debugPrint('[IncomingCall] 播放分段 AI 语音: "$cleanedText" (原始文本: "$text")');
-          
-          _pendingTtsCount++;
-          _ttsTaskChain = (_ttsTaskChain ?? Future.value()).then((_) async {
-            try {
-              if (!mounted) return;
-              final path = await _ttsAudioService.generateAndCache(cleanedText, config);
-              if (path != null && mounted) {
-                if (_isConnected) {
-                  await _ttsAudioService.enqueue(path, 'call_msg_$index');
-                } else {
-                  _pendingAudioPaths.add(path);
-                }
-              }
-            } finally {
-              debugPrint('[IncomingCall] finally block(punc): pendingTtsCount before decrement: $_pendingTtsCount');
-              _pendingTtsCount--;
-              _checkIfAllDone();
-            }
-          }).catchError((e) {
-            debugPrint('[IncomingCall] TTS播放链错误(punc): $e');
-          });
-        }
-      }
-    }
-  }
 
   void _checkIfAllDone() {
     if (!mounted) return;
     final isPlaying = _ttsAudioService.isPlaying;
-    debugPrint('[IncomingCall] _checkIfAllDone: isStreamDone=$_isStreamDone, pendingTtsCount=$_pendingTtsCount, isPlaying=$isPlaying, callState=$_callState');
+    final processingState = _ttsAudioService.processingState;
+    final isDonePlaying = processingState == ProcessingState.completed || processingState == ProcessingState.idle;
+    
+    debugPrint('[IncomingCall] _checkIfAllDone: isStreamDone=$_isStreamDone, pendingTtsCount=$_pendingTtsCount, isPlaying=$isPlaying, processingState=$processingState, callState=$_callState');
+    
     if (_isStreamDone && _pendingTtsCount == 0 && 
-        !isPlaying && 
+        isDonePlaying && 
         (_callState == CallSessionState.speaking || _callState == CallSessionState.thinking)) {
       debugPrint('[IncomingCall] 所有 TTS 任务及播放均已完成，自动切换回听状态');
       setState(() {
@@ -556,7 +491,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       final payload = {
         'action': 'speak',
         'companionId': reminder.companionId,
-        'conversationId': widget.conversationId ?? 0,
+        'conversationId': _resolvedConversationId ?? widget.conversationId ?? 0,
         'content': '[GREETING]',
       };
       _isStreamDone = false; // 表示开始等待 AI 的流式响应
@@ -607,39 +542,25 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     });
     
     try {
-      String transcribedText = '';
-      if (LocalStorage.asrProviderType == 'custom') {
-        final asrClient = AsrApiClient();
-        transcribedText = await asrClient.transcribe(path);
-      } else {
-        final apiService = ref.read(apiServiceProvider);
-        transcribedText = await apiService.transcribeAudio(path);
-      }
+      final file = File(path);
+      final bytes = await file.readAsBytes();
+      final base64Audio = base64Encode(bytes);
       
       // 删除临时文件
       try {
-        await File(path).delete();
+        await file.delete();
       } catch (_) {}
       
       if (!mounted) return;
       
-      if (transcribedText.trim().isEmpty) {
-        debugPrint('[IncomingCall] ASR 未识别到任何文字');
-        setState(() {
-          _callState = CallSessionState.listening;
-        });
-        _startUserRecording();
-        return;
-      }
-      
-      debugPrint('[IncomingCall] ASR 识别成功: "$transcribedText"');
       _messageIndex++;
+      _pendingTtsCount = 0; // 开启新回合前清零计数器，保障状态一致性
       if (_channel != null) {
         final payload = {
           'action': 'speak',
           'companionId': _reminder?.companionId,
-          'conversationId': widget.conversationId ?? 0,
-          'content': transcribedText,
+          'conversationId': _resolvedConversationId ?? widget.conversationId ?? 0,
+          'audio': base64Audio,
         };
         _isStreamDone = false; // 重置流结束标志，表示开始等待新的AI回复流
         _channel!.sink.add(jsonEncode(payload));
@@ -665,7 +586,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     if (_channel != null) {
       final payload = {
         'action': 'interrupt',
-        'conversationId': widget.conversationId ?? 0,
+        'conversationId': _resolvedConversationId ?? widget.conversationId ?? 0,
       };
       _channel!.sink.add(jsonEncode(payload));
     }
@@ -676,6 +597,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     _ttsTaskChain = null;
     _isStreamDone = true; // 强制打断设置为true
     _pendingTtsCount = 0; // 重置计数器
+    _messageIndex++;      // 增加消息回合索引，彻底废弃旧回合中所有未完成/已生成的后台 TTS 任务
     
     setState(() {
       _callState = CallSessionState.listening;
@@ -1206,5 +1128,40 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
         ),
       ],
     );
+  }
+
+  Future<void> _startRingtone() async {
+    try {
+      final byteData = await rootBundle.load('assets/audio/phone_ringtone.wav');
+      final buffer = byteData.buffer.asUint8List();
+      _isPlayingRingtone = true;
+      _playRingtoneLoop(buffer);
+    } catch (e) {
+      debugPrint('播放铃声失败: $e');
+    }
+  }
+
+  void _playRingtoneLoop(Uint8List buffer) async {
+    if (!_isPlayingRingtone || !mounted) return;
+    try {
+      await _ringtonePlayer.startPlayer(
+        fromDataBuffer: buffer,
+        codec: Codec.pcm16WAV,
+        whenFinished: () {
+          if (_isPlayingRingtone) {
+            _playRingtoneLoop(buffer);
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('循环播放铃声帧失败: $e');
+    }
+  }
+
+  Future<void> _stopRingtone() async {
+    _isPlayingRingtone = false;
+    try {
+      await _ringtonePlayer.stopPlayer();
+    } catch (_) {}
   }
 }

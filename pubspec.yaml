@@ -44,7 +44,7 @@ dependencies:
   flutter_markdown: ^0.7.6
 
   # Audio & Voice
-  just_audio: ^0.9.43
+  flutter_sound: ^9.12.0
   record: ^6.0.0
   audio_session: ^0.1.25
   http: ^1.2.0

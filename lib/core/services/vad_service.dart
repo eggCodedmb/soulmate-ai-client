@@ -37,6 +37,7 @@ class VadState {
 
 // 使用 Riverpod 管理 VAD 生命周期
 class VadNotifier extends AutoDisposeNotifier<VadState> {
+  static Future<void>? _cleanupFuture;
   VadHandler? _vadHandler;
   StreamSubscription? _onSpeechEndSub;
   StreamSubscription? _onFrameProcessedSub;
@@ -56,9 +57,9 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
         final wavData = AudioUtils.samplesToWav(samples, 16000);
         await File(filePath).writeAsBytes(wavData);
 
+        // 调整顺序：先彻底关闭底层录音，避免 UI 监听器并发重复触发 stopListening()
+        await stopListening();
         state = state.copyWith(lastAudioPath: filePath);
-        // 自动停止录音
-        stopListening();
       }
     });
 
@@ -79,17 +80,18 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
       _onFrameProcessedSub?.cancel();
       _onErrorSub?.cancel();
       
-      // 延迟释放，彻底规避 vad 包内部在 stopListening 后因异步导致 closed controller add 的崩溃
       final handler = _vadHandler;
       _vadHandler = null;
       if (handler != null) {
-        handler.stopListening().then((_) {
-          Future.delayed(const Duration(milliseconds: 200), () {
-            try {
-              handler.dispose();
-            } catch (_) {}
-          });
-        });
+        _cleanupFuture = () async {
+          try {
+            await handler.stopListening();
+            await Future.delayed(const Duration(milliseconds: 200));
+            await handler.dispose();
+          } catch (e) {
+            debugPrint('[VadNotifier] Cleanup error: $e');
+          }
+        }();
       }
     });
 
@@ -98,19 +100,39 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
 
   Future<void> startListening() async {
     if (state.isRecording) return;
+    
+    if (_cleanupFuture != null) {
+      debugPrint('[VadNotifier] Waiting for previous VAD instance cleanup...');
+      await _cleanupFuture;
+      _cleanupFuture = null;
+      debugPrint('[VadNotifier] Previous VAD instance cleanup done');
+    }
+    
     state = state.copyWith(isRecording: true, error: null, lastAudioPath: null);
     
-    try {
-      await _vadHandler?.startListening(
-        positiveSpeechThreshold: 0.5,
-        redemptionFrames: 25,
-        model: 'v5',
-        frameSamples: 512,
-      );
-    } catch (e) {
-      debugPrint('[VadNotifier] startListening failed: $e');
-      state = state.copyWith(isRecording: false, error: e.toString());
-    }
+    // 使用 runZonedGuarded 捕获第三方 VAD 内部异步循环抛出的未捕获异常
+    runZonedGuarded(() async {
+      try {
+        await _vadHandler?.startListening(
+          positiveSpeechThreshold: 0.5,
+          redemptionFrames: 25,
+          model: 'v5',
+          frameSamples: 512,
+        );
+      } catch (e) {
+        debugPrint('[VadNotifier] startListening failed: $e');
+        state = state.copyWith(isRecording: false, error: e.toString());
+      }
+    }, (error, stack) {
+      debugPrint('[VadNotifier] Caught VAD internal async error: $error');
+      // 如果是已知无害的 StreamController close 之后的添加事件报错，进行静默忽略，防止 Crash
+      if (error.toString().contains('Cannot add new events after calling close')) {
+        return;
+      }
+      if (state.isRecording) {
+        state = state.copyWith(error: error.toString());
+      }
+    });
   }
 
   Future<void> stopListening() async {

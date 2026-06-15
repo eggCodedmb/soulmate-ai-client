@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart';
 import '../../core/network/tts_api_client.dart';
 import '../../shared/models/tts_config.dart';
 import 'tts_audio_service.dart';

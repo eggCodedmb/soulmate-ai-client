@@ -3,20 +3,28 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/network/tts_api_client.dart';
 import '../../core/storage/local_storage.dart';
 import '../../shared/models/tts_config.dart';
 
+/// 播放器状态枚举，保持与 just_audio 相同的名称以兼容调用方
+enum ProcessingState {
+  idle,
+  loading,
+  buffering,
+  ready,
+  completed,
+}
+
 /// TTS 音频服务 - 负责生成、缓存、播放 TTS 音频
 ///
-/// 使用流式接口生成音频，缓存到临时目录，使用 just_audio 播放。
+/// 使用流式接口生成音频，缓存到临时目录，使用 flutter_sound 播放。
 class TtsAudioService {
   final TtsApiClient _api;
-  final AudioPlayer _player = AudioPlayer();
-  late final ConcatenatingAudioSource _playlist;
+  final FlutterSoundPlayer _player = FlutterSoundPlayer();
 
   /// 音频缓存目录
   Directory? _cacheDir;
@@ -24,35 +32,26 @@ class TtsAudioService {
   /// 当前播放状态
   bool _isPlaying = false;
   String? _playingMessageKey;
+  ProcessingState _processingState = ProcessingState.idle;
   
-  // 记录当前播放列表中已有的文件路径，避免重复添加
-  final List<String> _queuedFilePaths = [];
+  // 自定义顺序播放队列
+  final List<String> _playlist = [];
 
   /// 播放状态回调
   VoidCallback? _onStateChanged;
 
-  StreamSubscription<PlayerState>? _playerStateSubscription;
-
   TtsAudioService(this._api) {
-    _playlist = ConcatenatingAudioSource(children: []);
-    _player.setAudioSource(_playlist);
-
-    _playerStateSubscription = _player.playerStateStream.listen((state) {
-      final wasPlaying = _isPlaying;
-      final isCompleted = state.processingState == ProcessingState.completed;
-      
-      _isPlaying = state.playing && !isCompleted;
-      
-      if (wasPlaying != _isPlaying || isCompleted) {
-        _onStateChanged?.call();
-      }
+    _player.openPlayer().then((_) {
+      debugPrint('[TTS] FlutterSoundPlayer opened successfully');
+    }).catchError((e) {
+      debugPrint('[TTS] Failed to open FlutterSoundPlayer: $e');
     });
   }
 
   bool get isPlaying => _isPlaying;
   String? get playingMessageKey => _playingMessageKey;
   bool get isConfigured => _api.isConfigured;
-  ProcessingState get processingState => _player.processingState;
+  ProcessingState get processingState => _processingState;
 
   /// 设置状态变化回调
   void setOnStateChanged(VoidCallback? callback) {
@@ -129,30 +128,49 @@ class TtsAudioService {
       }
 
       // 避免重复添加同一文件
-      if (_queuedFilePaths.contains(filePath)) return;
+      if (_playlist.contains(filePath)) return;
 
-      final source = AudioSource.file(filePath);
-      _queuedFilePaths.add(filePath);
-      await _playlist.add(source);
+      _playlist.add(filePath);
 
       // 如果当前没在播放，开始播放
       if (!_isPlaying) {
-        // 如果已经播完了之前的片段，或者处于 idle 状态，需要确保从正确的位置开始
-        if (_player.processingState == ProcessingState.completed || 
-            _player.processingState == ProcessingState.idle) {
-          // 总是尝试 seek 到当前播放列表的末尾（即刚刚添加的这一段）
-          final targetIndex = _playlist.length - 1;
-          if (targetIndex >= 0) {
-            await _player.seek(Duration.zero, index: targetIndex);
-          }
-        }
-        
-        await _player.play();
         _isPlaying = true;
+        _processingState = ProcessingState.ready;
         _onStateChanged?.call();
+        await _playNext();
       }
     } catch (e) {
       debugPrint('[TTS] 加入队列播放失败: $e');
+    }
+  }
+
+  /// 顺序播放队列中的下一个音频
+  Future<void> _playNext() async {
+    if (_playlist.isEmpty) {
+      _isPlaying = false;
+      _processingState = ProcessingState.completed;
+      _onStateChanged?.call();
+      return;
+    }
+
+    final currentFile = _playlist.first;
+    try {
+      await _player.startPlayer(
+        fromURI: currentFile,
+        whenFinished: () async {
+          if (_playlist.isNotEmpty) {
+            _playlist.removeAt(0);
+          }
+          await _playNext();
+        },
+      );
+    } catch (e) {
+      debugPrint('[TTS] 顺序播放单个文件失败: $e');
+      // 播放失败则跳过该文件继续播放下一个
+      if (_playlist.isNotEmpty) {
+        _playlist.removeAt(0);
+      }
+      await _playNext();
     }
   }
 
@@ -160,44 +178,42 @@ class TtsAudioService {
   Future<void> play(String filePath, String messageKey) async {
     await stop();
     _playingMessageKey = messageKey;
-    
-    // 强制重置
-    await _player.stop();
-    await _playlist.clear();
-    _queuedFilePaths.clear();
-    
     await enqueue(filePath, messageKey);
-    // 确保从头开始
-    await _player.seek(Duration.zero, index: 0);
   }
 
   /// 暂停/继续播放
   Future<void> togglePause() async {
-    if (_isPlaying) {
-      await _player.pause();
-    } else {
-      if (_player.processingState == ProcessingState.completed) {
-        await _player.seek(Duration.zero, index: 0);
-      }
-      await _player.play();
+    if (_player.isPlaying) {
+      await _player.pausePlayer();
+      _isPlaying = false;
+      _processingState = ProcessingState.ready;
+      _onStateChanged?.call();
+    } else if (_player.isPaused) {
+      await _player.resumePlayer();
+      _isPlaying = true;
+      _processingState = ProcessingState.ready;
+      _onStateChanged?.call();
     }
   }
 
   /// 停止播放并清空队列
   Future<void> stop() async {
-    await _player.stop();
-    await _playlist.clear();
-    _queuedFilePaths.clear();
+    try {
+      await _player.stopPlayer();
+    } catch (_) {}
+    _playlist.clear();
     _playingMessageKey = null;
     _isPlaying = false;
+    _processingState = ProcessingState.idle;
     _onStateChanged?.call();
   }
 
   /// 释放资源
   void dispose() {
     _onStateChanged = null;
-    _playerStateSubscription?.cancel();
-    _player.dispose();
+    try {
+      _player.closePlayer();
+    } catch (_) {}
   }
 }
 
