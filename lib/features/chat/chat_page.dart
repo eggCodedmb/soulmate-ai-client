@@ -331,6 +331,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
         await _refreshMessages();
         
+        // 找到最新的一条伴侣消息（即刚刚流式吐字结束刷新后的真实消息，ID > 0）
+        final aiMessage = _messages.firstWhere(
+          (m) => m.senderType == 'companion' && m.id > 0,
+          orElse: () => _messages.first,
+        );
+        final realKey = _messageTtsKey(aiMessage);
+        final tempKey = '${_conversationId}_0';
+        
+        // 执行 Key 迁移关联，使正在流式播放的喇叭 Icon 立即被激活并显示为播放中（粉色）状态
+        ref.read(ttsProvider.notifier).associateTempKeyWithRealKey(tempKey, realKey);
+        
         // 最后触发一次全量生成以持久化完整缓存。
         // 设置 autoPlay: false，因为此时可能正在播放流式片段，不应中断。
         _autoGenerateTts(buffer.toString(), autoPlay: false);

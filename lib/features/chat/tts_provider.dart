@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/tts_api_client.dart';
@@ -97,6 +96,9 @@ class TtsNotifier extends StateNotifier<TtsState> {
   final TtsApiClient _api;
   TtsAudioService? _audioService;
 
+  /// 临时 Key 到真实 Key 的映射表，用于拦截并重定向飞在半空中的异步 TTS 合成任务
+  final Map<String, String> _tempToRealKeyMap = {};
+
   TtsNotifier(this._api) : super(const TtsState()) {
     if (_api.isConfigured) {
       _audioService = TtsAudioService(_api);
@@ -105,46 +107,109 @@ class TtsNotifier extends StateNotifier<TtsState> {
   }
 
   void _onAudioStateChanged() {
-    if (!mounted) return;
+    // 使用 Future.microtask 延迟状态修改，避免在 widget build 期间同步修改 provider
+    // （Riverpod 不允许在 widget 生命周期中同步修改 provider 状态）
+    Future.microtask(() {
+      if (!mounted) return;
+      _syncAudioState();
+    });
+  }
+
+  void _syncAudioState() {
     final svc = _audioService;
     if (svc == null) return;
 
     final svcKey = svc.playingMessageKey;
     final svcIsPlaying = svc.isPlaying;
-    final providerPlayingKey = state.playingMessageKey;
     final isCompleted = svc.processingState == ProcessingState.completed;
+    final isIdle = svc.processingState == ProcessingState.idle;
+
+    debugPrint('[TTS Provider] 状态回调: svcKey=$svcKey, isPlaying=$svcIsPlaying, '
+        'isCompleted=$isCompleted, isIdle=$isIdle, '
+        'providerPlayingKey=${state.playingMessageKey}');
 
     if (svcKey != null) {
       final entry = state.getMessageState(svcKey);
-      if (svcIsPlaying) {
-        // 1. 正在播放
-        if (entry.status != MessageTtsStatus.playing) {
-          _updateMessageState(svcKey, entry.copyWith(status: MessageTtsStatus.playing));
+      
+      // 准备一个新的 messageStates Map 用于批量更新，彻底避免状态不一致和遗漏重置
+      final newMap = Map<String, MessageTtsEntry>.from(state.messageStates);
+      bool changed = false;
+
+      // 1. 将其他所有处于播放/暂停状态的消息重置为 ready
+      newMap.forEach((key, val) {
+        if (key != svcKey && 
+            (val.status == MessageTtsStatus.playing || val.status == MessageTtsStatus.paused)) {
+          newMap[key] = val.copyWith(status: MessageTtsStatus.ready);
+          changed = true;
         }
-        if (providerPlayingKey != svcKey) {
-          state = state.copyWith(playingMessageKey: svcKey);
+      });
+      
+      String? nextPlayingKey = state.playingMessageKey;
+
+      if (svcIsPlaying) {
+        // ✅ 正在播放
+        if (entry.status != MessageTtsStatus.playing) {
+          newMap[svcKey] = entry.copyWith(status: MessageTtsStatus.playing);
+          changed = true;
+        }
+        if (nextPlayingKey != svcKey) {
+          nextPlayingKey = svcKey;
         }
       } else if (isCompleted) {
-        // 2. 播放结束
+        // ✅ 播放结束 — 这是最关键的分支
+        debugPrint('[TTS Provider] 播放完成: $svcKey, 当前状态=${entry.status}');
         if (entry.status != MessageTtsStatus.ready) {
-          _updateMessageState(svcKey, entry.copyWith(status: MessageTtsStatus.ready));
+          newMap[svcKey] = entry.copyWith(status: MessageTtsStatus.ready);
+          changed = true;
         }
-        if (providerPlayingKey != null) {
-          state = state.copyWith(playingMessageKey: null);
+        if (nextPlayingKey != null) {
+          nextPlayingKey = null;
+        }
+      } else if (isIdle) {
+        // ✅ 已停止（手动 stop）
+        if (entry.status == MessageTtsStatus.playing || entry.status == MessageTtsStatus.paused) {
+          newMap[svcKey] = entry.copyWith(status: MessageTtsStatus.ready);
+          changed = true;
+        }
+        if (nextPlayingKey != null) {
+          nextPlayingKey = null;
         }
       } else {
-        // 3. 暂停或缓冲中
-        if (entry.status != MessageTtsStatus.paused && entry.status != MessageTtsStatus.generating) {
-          _updateMessageState(svcKey, entry.copyWith(status: MessageTtsStatus.paused));
+        // ✅ 暂停（手动暂停）
+        if (svc.processingState == ProcessingState.ready && !svcIsPlaying) {
+          if (entry.status == MessageTtsStatus.playing) {
+            newMap[svcKey] = entry.copyWith(status: MessageTtsStatus.paused);
+            changed = true;
+          }
         }
       }
-    } else if (providerPlayingKey != null) {
-      // 4. 彻底停止 (svcKey 已清空)
-      final entry = state.getMessageState(providerPlayingKey);
-      if (entry.status == MessageTtsStatus.playing || entry.status == MessageTtsStatus.paused) {
-        _updateMessageState(providerPlayingKey, entry.copyWith(status: MessageTtsStatus.ready));
+
+      if (changed || state.playingMessageKey != nextPlayingKey) {
+        state = state.copyWith(
+          messageStates: newMap,
+          playingMessageKey: nextPlayingKey,
+        );
       }
-      state = state.copyWith(playingMessageKey: null);
+    } else {
+      // svcKey == null → 播放器已完全清空
+      final providerPlayingKey = state.playingMessageKey;
+      final newMap = Map<String, MessageTtsEntry>.from(state.messageStates);
+      bool changed = false;
+
+      // 重置所有处于播放/暂停状态的消息为 ready
+      newMap.forEach((key, val) {
+        if (val.status == MessageTtsStatus.playing || val.status == MessageTtsStatus.paused) {
+          newMap[key] = val.copyWith(status: MessageTtsStatus.ready);
+          changed = true;
+        }
+      });
+
+      if (changed || providerPlayingKey != null) {
+        state = state.copyWith(
+          messageStates: newMap,
+          playingMessageKey: null,
+        );
+      }
     }
   }
 
@@ -177,14 +242,16 @@ class TtsNotifier extends StateNotifier<TtsState> {
     required TtsConfig config,
     bool autoPlay = false,
   }) async {
+    final effectiveKey = _tempToRealKeyMap[messageKey] ?? messageKey;
+
     final svc = _audioService;
     if (svc == null || !svc.isConfigured) return;
 
-    final currentEntry = state.getMessageState(messageKey);
+    final currentEntry = state.getMessageState(effectiveKey);
     if (currentEntry.status == MessageTtsStatus.ready || 
         currentEntry.status == MessageTtsStatus.playing) {
       if (autoPlay && currentEntry.status == MessageTtsStatus.ready) {
-        await playMessage(messageKey);
+        await playMessage(effectiveKey);
       }
       return;
     }
@@ -192,55 +259,98 @@ class TtsNotifier extends StateNotifier<TtsState> {
     // 检查缓存
     final cached = await svc.getCachedAudioPath(text, config);
     if (cached != null) {
-      _updateMessageState(messageKey, MessageTtsEntry(
+      if (autoPlay) {
+        await stop();
+      }
+      _updateMessageState(effectiveKey, MessageTtsEntry(
         status: MessageTtsStatus.ready,
         audioPath: cached,
       ));
       if (autoPlay) {
-        await playMessage(messageKey);
+        await playMessage(effectiveKey);
       }
       return;
     }
-  // ... rest of method
+
+    if (autoPlay) {
+      await stop();
+    }
+
+    _updateMessageState(effectiveKey, const MessageTtsEntry().copyWith(
+      status: MessageTtsStatus.generating,
+    ));
 
     try {
       final path = await svc.generateAndCache(text, config);
       if (path != null) {
-        _updateMessageState(messageKey, MessageTtsEntry(
+        _updateMessageState(effectiveKey, MessageTtsEntry(
           status: MessageTtsStatus.ready,
           audioPath: path,
         ));
         if (autoPlay) {
-          await playMessage(messageKey);
+          await playMessage(effectiveKey);
         }
       } else {
-        _updateMessageState(messageKey, const MessageTtsEntry().copyWith(
+        _updateMessageState(effectiveKey, const MessageTtsEntry().copyWith(
           status: MessageTtsStatus.error,
           error: '生成失败',
         ));
       }
     } catch (e) {
-      _updateMessageState(messageKey, const MessageTtsEntry().copyWith(
+      _updateMessageState(effectiveKey, const MessageTtsEntry().copyWith(
         status: MessageTtsStatus.error,
         error: e.toString(),
       ));
     }
   }
 
-  /// 为指定消息生成并播放一段音频（流式段落支持）
+  /// 将临时消息的 TTS 状态关联并转移到真实消息 (防抖/防闪烁)
+  void associateTempKeyWithRealKey(String tempKey, String realKey) {
+    if (tempKey == realKey || !mounted) return;
+    
+    // 注册临时 Key 到真实 Key 的重定向映射
+    _tempToRealKeyMap[tempKey] = realKey;
+    
+    final newMap = Map<String, MessageTtsEntry>.from(state.messageStates);
+    final tempEntry = newMap[tempKey];
+    
+    if (tempEntry != null) {
+      // 迁移状态实体
+      newMap[realKey] = tempEntry;
+      newMap.remove(tempKey);
+      
+      String? nextPlayingKey = state.playingMessageKey;
+      if (nextPlayingKey == tempKey) {
+        nextPlayingKey = realKey;
+      }
+      
+      state = state.copyWith(
+        messageStates: newMap,
+        playingMessageKey: nextPlayingKey,
+      );
+      
+      // 同步更新音频播放器关联的 key，确保其回调函数能正确将状态通知给新的真实 key
+      if (_audioService != null && _audioService!.playingMessageKey == tempKey) {
+        _audioService!.updatePlayingMessageKey(realKey);
+      }
+    }
+  }
+
   Future<void> enqueueSegment({
     required String messageKey,
     required String text,
     required TtsConfig config,
   }) async {
+    final effectiveKey = _tempToRealKeyMap[messageKey] ?? messageKey;
+
     final svc = _audioService;
     if (svc == null || !svc.isConfigured || text.trim().isEmpty) return;
 
-    final currentEntry = state.getMessageState(messageKey);
+    final currentEntry = state.getMessageState(effectiveKey);
     
     // 如果是第一段且尚未开始生成/播放，标记为正在生成
     if (currentEntry.status == MessageTtsStatus.none) {
-      _updateMessageState(messageKey, const MessageTtsEntry().copyWith(
+      _updateMessageState(effectiveKey, const MessageTtsEntry().copyWith(
         status: MessageTtsStatus.generating,
       ));
     }
@@ -248,22 +358,10 @@ class TtsNotifier extends StateNotifier<TtsState> {
     try {
       final path = await svc.generateAndCache(text, config);
       if (path != null) {
-        // 加入播放队列
-        await svc.enqueue(path, messageKey);
-        
-        // 更新状态为正在播放（如果 service 还没更新状态）
-        if (state.playingMessageKey != messageKey) {
-          if (mounted) state = state.copyWith(playingMessageKey: messageKey);
-        }
-        
-        // 只要有一段 ready/playing，就把整体状态设为 playing/ready
-        final newStatus = svc.isPlaying ? MessageTtsStatus.playing : MessageTtsStatus.ready;
-        if (currentEntry.status != newStatus) {
-          _updateMessageState(messageKey, MessageTtsEntry(
-            status: newStatus,
-            audioPath: path, // 记录最后一段路径（仅参考）
-          ));
-        }
+        // 加入播放队列 — enqueue 内部会调用 _onStateChanged 来更新状态
+        // 不需要在这里手动设置 playingMessageKey 或 status，
+        // 让 _onAudioStateChanged 回调统一管理，避免竞态覆盖
+        await svc.enqueue(path, effectiveKey);
       }
     } catch (e) {
       debugPrint('[TTS] 段落生成失败: $e');
@@ -278,19 +376,28 @@ class TtsNotifier extends StateNotifier<TtsState> {
     final entry = state.getMessageState(messageKey);
     if (entry.audioPath == null) return;
 
-    // 如果正在播放其他消息，先停止
-    if (svc.isPlaying && state.playingMessageKey != messageKey) {
-      await svc.stop();
+    if (mounted) {
+      final newMap = Map<String, MessageTtsEntry>.from(state.messageStates);
+      
+      // 1. 将其他所有处于播放/暂停状态的消息重置为 ready
+      newMap.forEach((key, val) {
+        if (key != messageKey && 
+            (val.status == MessageTtsStatus.playing || val.status == MessageTtsStatus.paused)) {
+          newMap[key] = val.copyWith(status: MessageTtsStatus.ready);
+        }
+      });
+
+      // 2. 将当前要播放的消息设置为 playing
+      newMap[messageKey] = entry.copyWith(status: MessageTtsStatus.playing);
+
+      // 3. 一次性更新 state
+      state = state.copyWith(
+        messageStates: newMap,
+        playingMessageKey: messageKey,
+      );
     }
 
-    if (mounted) state = state.copyWith(playingMessageKey: messageKey);
-    _updateMessageState(messageKey, entry.copyWith(
-      status: MessageTtsStatus.playing,
-    ));
-
-    // 这里由于 play 是针对单文件设计的，如果消息由多段组成，
-    // 点击“重新播放”目前只会播放最后一段（或缓存的全量文件）。
-    // 在流式场景下，点击播放按钮通常发生在流结束后，此时可以播放全量缓存。
+    // svc.play() 内部 _stopSilently → 不触发回调 → 状态不会被重置
     await svc.play(entry.audioPath!, messageKey);
   }
 
@@ -304,6 +411,8 @@ class TtsNotifier extends StateNotifier<TtsState> {
 
   /// 停止播放
   Future<void> stop() async {
+    _tempToRealKeyMap.clear(); // 新回合开始或手动停止时，清除旧映射
+
     final svc = _audioService;
     if (svc == null) return;
 

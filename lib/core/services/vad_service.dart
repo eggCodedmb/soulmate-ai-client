@@ -48,19 +48,25 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
     _vadHandler = VadHandler.create();
     
     // 初始化时建立监听，避免重复订阅
-    _onSpeechEndSub = _vadHandler!.onSpeechEnd.listen((samples) async {
-      debugPrint('[VadNotifier] Speech ended, captured ${samples.length} samples');
-      if (state.isRecording) {
-        final tempDir = await getTemporaryDirectory();
-        final filePath = '${tempDir.path}/call_voice_${DateTime.now().millisecondsSinceEpoch}.wav';
+    _onSpeechEndSub = _vadHandler!.onSpeechEnd.listen((samples) {
+      // 使用 Future.microtask 避开 stream callback 的同步调用栈，彻底防止与底层 FFI 录音停止发生死锁
+      Future.microtask(() async {
+        if (!state.isRecording) return;
+        debugPrint('[VadNotifier] Speech ended, captured ${samples.length} samples');
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final filePath = '${tempDir.path}/call_voice_${DateTime.now().millisecondsSinceEpoch}.wav';
 
-        final wavData = AudioUtils.samplesToWav(samples, 16000);
-        await File(filePath).writeAsBytes(wavData);
+          final wavData = AudioUtils.samplesToWav(samples, 16000);
+          await File(filePath).writeAsBytes(wavData);
 
-        // 调整顺序：先彻底关闭底层录音，避免 UI 监听器并发重复触发 stopListening()
-        await stopListening();
-        state = state.copyWith(lastAudioPath: filePath);
-      }
+          // 先彻底关闭底层录音，避免 UI 监听器并发重复触发 stopListening()
+          await stopListening();
+          state = state.copyWith(lastAudioPath: filePath);
+        } catch (e) {
+          debugPrint('[VadNotifier] Error processing speech end: $e');
+        }
+      });
     });
 
     _onFrameProcessedSub = _vadHandler!.onFrameProcessed.listen((frame) {
@@ -85,8 +91,8 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
       if (handler != null) {
         _cleanupFuture = () async {
           try {
-            await handler.stopListening();
-            await Future.delayed(const Duration(milliseconds: 200));
+            await handler.stopListening().timeout(const Duration(milliseconds: 300));
+            await Future.delayed(const Duration(milliseconds: 100));
             await handler.dispose();
           } catch (e) {
             debugPrint('[VadNotifier] Cleanup error: $e');
@@ -103,15 +109,19 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
     
     if (_cleanupFuture != null) {
       debugPrint('[VadNotifier] Waiting for previous VAD instance cleanup...');
-      await _cleanupFuture;
+      try {
+        await _cleanupFuture!.timeout(const Duration(milliseconds: 500));
+      } catch (e) {
+        debugPrint('[VadNotifier] Previous VAD instance cleanup timed out or failed: $e');
+      }
       _cleanupFuture = null;
-      debugPrint('[VadNotifier] Previous VAD instance cleanup done');
+      debugPrint('[VadNotifier] Previous VAD instance cleanup done/bypassed');
     }
     
     state = state.copyWith(isRecording: true, error: null, lastAudioPath: null);
     
     // 使用 runZonedGuarded 捕获第三方 VAD 内部异步循环抛出的未捕获异常
-    runZonedGuarded(() async {
+    unawaited(runZonedGuarded(() async {
       try {
         await _vadHandler?.startListening(
           positiveSpeechThreshold: 0.5,
@@ -132,7 +142,7 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
       if (state.isRecording) {
         state = state.copyWith(error: error.toString());
       }
-    });
+    }));
   }
 
   Future<void> stopListening() async {

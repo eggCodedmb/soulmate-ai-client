@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
@@ -40,9 +39,21 @@ class TtsAudioService {
   /// 播放状态回调
   VoidCallback? _onStateChanged;
 
+  /// 进度订阅，用于检测播放结束
+  StreamSubscription<PlaybackDisposition>? _progressSubscription;
+
+  /// 安全回退定时器：当 whenFinished 不触发时，用 onProgress 检测播放结束
+  Timer? _completionGuardTimer;
+
+  /// 标记当前播放文件是否已通过 whenFinished 正常完成
+  bool _whenFinishedFired = false;
+
   TtsAudioService(this._api) {
     _player.openPlayer().then((_) {
       debugPrint('[TTS] FlutterSoundPlayer opened successfully');
+      // 启用进度订阅，用于安全回退检测
+      _player.setSubscriptionDuration(const Duration(milliseconds: 200));
+      _progressSubscription = _player.onProgress?.listen(_onProgress);
     }).catchError((e) {
       debugPrint('[TTS] Failed to open FlutterSoundPlayer: $e');
     });
@@ -56,6 +67,40 @@ class TtsAudioService {
   /// 设置状态变化回调
   void setOnStateChanged(VoidCallback? callback) {
     _onStateChanged = callback;
+  }
+
+  /// 动态更新当前播放消息的 key，用于流式临时 key (id=0) 与真实 key (id>0) 的无缝过渡
+  void updatePlayingMessageKey(String newKey) {
+    _playingMessageKey = newKey;
+  }
+
+  /// 进度回调 - 用作 whenFinished 的安全回退
+  void _onProgress(PlaybackDisposition disposition) {
+    // 当播放器实际已停止但 whenFinished 没触发时，通过 onProgress 检测
+    if (!_isPlaying || _playlist.isEmpty) return;
+
+    // 检查播放器是否真的已经停了（position 不再变化且接近 duration）
+    if (disposition.duration.inMilliseconds > 0 &&
+        disposition.position.inMilliseconds > 0 &&
+        disposition.position >= disposition.duration - const Duration(milliseconds: 100)) {
+      // 启动一个短延时守卫：如果 200ms 内 whenFinished 没触发，手动推进
+      _completionGuardTimer?.cancel();
+      _completionGuardTimer = Timer(const Duration(milliseconds: 300), () {
+        if (!_whenFinishedFired && _isPlaying && _playlist.isNotEmpty) {
+          debugPrint('[TTS] 安全回退：whenFinished 未触发，手动推进到下一段');
+          _advancePlaylist();
+        }
+      });
+    }
+  }
+
+  /// 推进播放列表（从 whenFinished 或安全回退调用）
+  Future<void> _advancePlaylist() async {
+    _completionGuardTimer?.cancel();
+    if (_playlist.isNotEmpty) {
+      _playlist.removeAt(0);
+    }
+    await _playNext();
   }
 
   /// 初始化缓存目录
@@ -122,10 +167,11 @@ class TtsAudioService {
   Future<void> enqueue(String filePath, String messageKey) async {
     try {
       // 如果是新的消息，清空旧队列
-      if (_playingMessageKey != messageKey) {
+      if (_playingMessageKey != null && _playingMessageKey != messageKey) {
         await stop();
-        _playingMessageKey = messageKey;
       }
+      
+      _playingMessageKey = messageKey;
 
       // 避免重复添加同一文件
       if (_playlist.contains(filePath)) return;
@@ -136,7 +182,7 @@ class TtsAudioService {
       if (!_isPlaying) {
         _isPlaying = true;
         _processingState = ProcessingState.ready;
-        _onStateChanged?.call();
+        _notifyStateChanged();
         await _playNext();
       }
     } catch (e) {
@@ -147,23 +193,37 @@ class TtsAudioService {
   /// 顺序播放队列中的下一个音频
   Future<void> _playNext() async {
     if (_playlist.isEmpty) {
+      // 播放队列清空 → 完成
       _isPlaying = false;
       _processingState = ProcessingState.completed;
-      _onStateChanged?.call();
+      // 保留 _playingMessageKey 不清空，让 provider 读取后决定如何处理
+      _notifyStateChanged();
+      
+      // 延迟清空 _playingMessageKey，给 provider 足够时间读取
+      Future.microtask(() {
+        if (_processingState == ProcessingState.completed && !_isPlaying) {
+          _playingMessageKey = null;
+        }
+      });
       return;
     }
 
     final currentFile = _playlist.first;
+    _whenFinishedFired = false;
+    
     try {
       await _player.startPlayer(
         fromURI: currentFile,
         whenFinished: () async {
-          if (_playlist.isNotEmpty) {
-            _playlist.removeAt(0);
-          }
-          await _playNext();
+          _whenFinishedFired = true;
+          _completionGuardTimer?.cancel();
+          debugPrint('[TTS] whenFinished 正常触发');
+          await _advancePlaylist();
         },
       );
+      _isPlaying = true;
+      _processingState = ProcessingState.ready;
+      _notifyStateChanged();
     } catch (e) {
       debugPrint('[TTS] 顺序播放单个文件失败: $e');
       // 播放失败则跳过该文件继续播放下一个
@@ -175,29 +235,32 @@ class TtsAudioService {
   }
 
   /// 播放指定文件（单文件模式，清空队列）
+  /// 注意：使用 _stopSilently 而非 stop，避免触发回调导致 provider 层状态竞态
   Future<void> play(String filePath, String messageKey) async {
-    await stop();
+    await _stopSilently();
     _playingMessageKey = messageKey;
     await enqueue(filePath, messageKey);
   }
 
   /// 暂停/继续播放
   Future<void> togglePause() async {
-    if (_player.isPlaying) {
+    if (_isPlaying) {
       await _player.pausePlayer();
       _isPlaying = false;
       _processingState = ProcessingState.ready;
-      _onStateChanged?.call();
-    } else if (_player.isPaused) {
+      _notifyStateChanged();
+    } else {
       await _player.resumePlayer();
       _isPlaying = true;
       _processingState = ProcessingState.ready;
-      _onStateChanged?.call();
+      _notifyStateChanged();
     }
   }
 
-  /// 停止播放并清空队列
-  Future<void> stop() async {
+  /// 静默停止：重置内部状态但不触发回调
+  /// 用于 play() 内部的清理，避免回调中错误地覆盖 provider 层刚设置的新消息状态
+  Future<void> _stopSilently() async {
+    _completionGuardTimer?.cancel();
     try {
       await _player.stopPlayer();
     } catch (_) {}
@@ -205,11 +268,24 @@ class TtsAudioService {
     _playingMessageKey = null;
     _isPlaying = false;
     _processingState = ProcessingState.idle;
+    // 不调用 _notifyStateChanged()!
+  }
+
+  /// 停止播放并清空队列（对外接口，会触发状态回调）
+  Future<void> stop() async {
+    await _stopSilently();
+    _notifyStateChanged();
+  }
+
+  /// 统一的状态变更通知
+  void _notifyStateChanged() {
     _onStateChanged?.call();
   }
 
   /// 释放资源
   void dispose() {
+    _completionGuardTimer?.cancel();
+    _progressSubscription?.cancel();
     _onStateChanged = null;
     try {
       _player.closePlayer();
