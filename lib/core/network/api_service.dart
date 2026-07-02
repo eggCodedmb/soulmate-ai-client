@@ -358,11 +358,13 @@ class ApiService {
         .map((e) => SubscriptionPlan.fromJson(e as Map<String, dynamic>))
         .toList();
   }
-/// 获取当前订阅
-Future<UserSubscription> getCurrentSubscription() async {
-  final response = await _dio.get('/api/subscription/current');
-  return UserSubscription.fromJson(_unwrap(response) as Map<String, dynamic>);
-}
+  /// 获取当前订阅
+  Future<UserSubscription?> getCurrentSubscription() async {
+    final response = await _dio.get('/api/subscription/current');
+    final data = _unwrap(response);
+    if (data == null) return null;
+    return UserSubscription.fromJson(data as Map<String, dynamic>);
+  }
 
 /// 获取用户当前额度状态
 Future<SubscriptionStatus> getSubscriptionStatus() async {

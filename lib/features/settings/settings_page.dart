@@ -328,6 +328,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                       ],
                     ),
                     const SizedBox(height: 20),
+                    // 服务器配置
+                    _buildSection(
+                      context,
+                      title: '服务器配置',
+                      icon: Icons.dns_outlined,
+                      iconColor: const Color(0xFF2196F3),
+                      isDark: isDark,
+                      children: [
+                        _buildMenuItem(
+                          context,
+                          icon: Icons.computer_rounded,
+                          iconColor: const Color(0xFF4CAF50),
+                          title: '服务器地址',
+                          subtitle: LocalStorage.serverType == 'online'
+                              ? '线上服务 (https://hupokeji.top)'
+                              : '本地服务 (${LocalStorage.localServerUrl})',
+                          isDark: isDark,
+                          onTap: () => _showServerConfigDialog(context, isDark),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
                     // 通知设置
                     _buildSection(
                       context,
@@ -688,6 +710,276 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
       indent: 68,
       endIndent: 20,
       color: isDark ? Colors.white.withOpacity(0.08) : Colors.grey.withOpacity(0.2),
+    );
+  }
+
+  /// 服务器配置弹窗
+  void _showServerConfigDialog(BuildContext context, bool isDark) {
+    var selectedType = LocalStorage.serverType;
+    final controller = TextEditingController(text: LocalStorage.localServerUrl);
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.3)
+                        : Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  '服务器配置',
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '切换 API 服务端地址（重启应用后生效）',
+                  style: TextStyle(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.5)
+                        : Colors.grey[600],
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // 线上服务选项
+                _buildServerTypeOption(
+                  context,
+                  title: '线上服务',
+                  subtitle: 'https://hupokeji.top',
+                  isSelected: selectedType == 'online',
+                  isDark: isDark,
+                  onTap: () {
+                    setSheetState(() {
+                      selectedType = 'online';
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                // 本地服务选项
+                _buildServerTypeOption(
+                  context,
+                  title: '本地服务',
+                  subtitle: selectedType == 'local' ? controller.text : '自定义本地服务器地址',
+                  isSelected: selectedType == 'local',
+                  isDark: isDark,
+                  onTap: () {
+                    setSheetState(() {
+                      selectedType = 'local';
+                    });
+                  },
+                ),
+                if (selectedType == 'local') ...[
+                  const SizedBox(height: 20),
+                  _buildModernTextField(
+                    controller: controller,
+                    isDark: isDark,
+                    labelText: '本地服务器地址',
+                    hintText: '例如 http://10.0.2.2:8000',
+                    prefixIcon: Icons.lan_outlined,
+                    keyboardType: TextInputType.url,
+                  ),
+                ],
+                const SizedBox(height: 32),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 56,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: TextButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.2)
+                                    : Colors.grey.withValues(alpha: 0.3),
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            '取消',
+                            style: TextStyle(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.7)
+                                  : Colors.grey[700],
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: SizedBox(
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            if (selectedType == 'local') {
+                              final url = controller.text.trim();
+                              if (url.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('请先填写本地服务器地址')),
+                                );
+                                return;
+                              }
+                              await LocalStorage.setLocalServerUrl(url);
+                            }
+                            await LocalStorage.setServerType(selectedType);
+                            if (context.mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('服务器配置已保存，请重启应用生效'),
+                                  backgroundColor: AppColors.brandPink,
+                                ),
+                              );
+                              setState(() {});
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.brandPink,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            '确定',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 服务器选项卡片
+  Widget _buildServerTypeOption(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required bool isSelected,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    final themeColor = AppColors.brandPink;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? themeColor.withValues(alpha: isDark ? 0.15 : 0.08)
+              : (isDark
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : Colors.grey.withValues(alpha: 0.05)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected
+                ? themeColor
+                : (isDark
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : Colors.grey.withValues(alpha: 0.2)),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? themeColor.withValues(alpha: isDark ? 0.2 : 0.1)
+                    : (isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.grey.withValues(alpha: 0.1)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                title == '线上服务' ? Icons.cloud_queue_rounded : Icons.computer_rounded,
+                color: isSelected
+                    ? themeColor
+                    : (isDark
+                        ? Colors.white.withValues(alpha: 0.6)
+                        : Colors.grey[600]),
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.5)
+                          : Colors.grey[600],
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              Icon(
+                Icons.check_circle_rounded,
+                color: themeColor,
+                size: 24,
+              ),
+          ],
+        ),
+      ),
     );
   }
 

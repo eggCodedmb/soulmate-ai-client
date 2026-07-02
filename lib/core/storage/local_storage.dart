@@ -242,6 +242,20 @@ class LocalStorage {
     await _prefs.setString('asr_model', model);
   }
 
+  // ==================== 服务器配置 ====================
+
+  /// 服务器类型 ('online' | 'local')
+  static String get serverType => _prefs.getString('server_type') ?? 'online';
+  static Future<void> setServerType(String type) async {
+    await _prefs.setString('server_type', type);
+  }
+
+  /// 本地服务器地址
+  static String get localServerUrl => _prefs.getString('local_server_url') ?? 'http://10.0.2.2:8000';
+  static Future<void> setLocalServerUrl(String url) async {
+    await _prefs.setString('local_server_url', url);
+  }
+
   // ==================== 通用方法 ====================
 
   /// 获取字符串
