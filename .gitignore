@@ -93,3 +93,4 @@ app.*.map.json
 # Environment
 .env
 .env.local
+test/vad_flow_test.dart

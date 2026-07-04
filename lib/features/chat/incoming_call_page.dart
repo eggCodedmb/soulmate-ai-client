@@ -13,15 +13,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:record/record.dart';
-import 'package:vad/vad.dart';
+import 'package:audio_session/audio_session.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_service.dart';
 import '../../core/network/tts_api_client.dart';
-import '../../core/storage/local_storage.dart';
 import '../../core/storage/secure_storage.dart';
-import '../../core/network/asr_api_client.dart';
-import '../../core/utils/audio_utils.dart';
 import '../../core/services/vad_service.dart';
 import '../../shared/models/reminder.dart';
 import '../../shared/models/companion.dart';
@@ -66,6 +63,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
   WebSocketChannel? _channel;
   late final TtsAudioService _ttsAudioService;
   final AudioRecorder _recorder = AudioRecorder();
+  AudioSession? _audioSession;
   
   bool _isContinuousMode = true; // 顺承对话模式（自动触发麦克风）
   
@@ -243,9 +241,14 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     HapticFeedback.mediumImpact();
     _stopRingtone();
     _ttsAudioService.stop();
-    
+
     await ref.read(vadNotifierProvider.notifier).stopListening();
-    
+
+    // 停用音频会话
+    if (_audioSession != null) {
+      await _audioSession!.setActive(false);
+    }
+
     _callTimer?.cancel();
     _channel?.sink.close();
     if (mounted) {
@@ -259,13 +262,30 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     _stopRingtone();
     _rippleController.stop();
 
+    // 配置音频会话为 VoIP 通话模式（回声消除 + 扬声器 + 同时录放）
+    _audioSession = await AudioSession.instance;
+    final avOptions = AVAudioSessionCategoryOptions.defaultToSpeaker |
+        AVAudioSessionCategoryOptions.allowBluetooth |
+        AVAudioSessionCategoryOptions.allowBluetoothA2dp;
+    await _audioSession!.configure(AudioSessionConfiguration(
+      avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+      avAudioSessionCategoryOptions: avOptions,
+      avAudioSessionMode: AVAudioSessionMode.voiceChat,
+      androidAudioAttributes: const AndroidAudioAttributes(
+        contentType: AndroidAudioContentType.speech,
+        usage: AndroidAudioUsage.voiceCommunication,
+      ),
+      androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+    ));
+    await _audioSession!.setActive(true);
+
     setState(() {
       _isConnected = true;
       _callState = CallSessionState.connecting;
     });
 
     _waveController.repeat(reverse: true);
-    
+
     // 启动时长计时器
     _startCallTimer();
 
@@ -401,7 +421,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
                 _checkIfAllDone();
               }
             }
-          }).catchError((e) {
+    }).catchError((Object e) {
             debugPrint('[IncomingCall] 播放音频错误: $e');
           });
         } else if (done) {
@@ -457,7 +477,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
   Future<void> _playInitialGreeting() async {
     // 防御性等待：如果 _reminder 仍在加载，等待其加载完毕
     while (_isLoading && _reminder == null && mounted) {
-      await Future.delayed(const Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
     }
     
     final reminder = _reminder;
@@ -516,7 +536,16 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
         return;
       }
 
-      await ref.read(vadNotifierProvider.notifier).startListening();
+      // 启动录音并获取音频流
+      final stream = await _recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+      );
+
+      await ref.read(vadNotifierProvider.notifier).startListening(stream);
     } catch (e) {
       debugPrint('[IncomingCall] VAD 开始录音失败: $e');
     }
@@ -524,10 +553,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
 
   Future<void> _stopUserRecording({required bool send}) async {
     await ref.read(vadNotifierProvider.notifier).stopListening();
-    
-    // VAD 模式下，自动断句通过 onSpeechEnd 触发。
-    // 如果是手动停止（如被打断），通常不需要额外处理，除非 send 为 true。
-    // 但通话场景下 send 通常由 onSpeechEnd 自动触发。
+    await _recorder.stop();
   }
 
   void _doneSpeakingWithFile(String path) {
@@ -616,7 +642,11 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     ref.listen<VadState>(vadNotifierProvider, (previous, next) {
       if (next.lastAudioPath != null && previous?.lastAudioPath != next.lastAudioPath) {
         _doneSpeakingWithFile(next.lastAudioPath!);
-        ref.read(vadNotifierProvider.notifier).clearAudioPath();
+        Future.microtask(() {
+          if (mounted) {
+            ref.read(vadNotifierProvider.notifier).clearAudioPath();
+          }
+        });
       }
     });
 

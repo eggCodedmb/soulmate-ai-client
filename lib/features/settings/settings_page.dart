@@ -1514,7 +1514,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text(ok ? '连接成功 ✓' : '连接失败，请检查地址'),
+                                        content: Text(ok ? '模型服务健康 ✓' : '模型服务不可用，请检查地址'),
                                         backgroundColor: ok ? const Color(0xFF4CAF50) : const Color(0xFFE53935),
                                       ),
                                     );
@@ -1537,7 +1537,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                                   child: CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : Text(
-                                  '测试连接',
+                                  '测试健康',
                                   style: TextStyle(
                                     color: isDark
                                         ? Colors.white.withOpacity(0.7)
@@ -1596,9 +1596,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
       ));
       // 去掉尾部斜杠
       final url = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
-      // OpenAI 协议: GET /models 获取模型列表（Ollama 也兼容此端点）
-      await dio.get<dynamic>('$url/models');
-      return true;
+      // OpenAI 协议健康检查: GET /health
+      final response = await dio.get<dynamic>('$url/health');
+      // 检查响应状态码
+      return response.statusCode == 200;
     } on Object catch (e) {
       debugPrint('[LLM] 测试连接失败: $e');
       return false;
