@@ -5,12 +5,13 @@ import '../../routing/app_router.dart';
 
 /// 认证拦截器 - JWT Token自动注入 + 过期自动刷新与跳转登录
 class AuthInterceptor extends Interceptor {
+  // ignore: unused_field
   final Dio _dio;
 
   AuthInterceptor(this._dio);
 
   @override
-  void onRequest(
+  Future<void> onRequest(
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
@@ -23,7 +24,7 @@ class AuthInterceptor extends Interceptor {
   }
 
   @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) async {
+  Future<void> onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) async {
     final data = response.data;
     if (data is Map<String, dynamic>) {
       final code = data['code'] as int? ?? 0;
@@ -46,7 +47,7 @@ class AuthInterceptor extends Interceptor {
   }
 
   @override
-  void onError(DioException err, ErrorInterceptorHandler handler) async {
+  Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
     if (err.response?.statusCode == 401) {
       // Token过期，尝试刷新
       try {

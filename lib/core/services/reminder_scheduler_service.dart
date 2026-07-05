@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../network/api_service.dart';
 import '../network/tts_api_client.dart';
-import '../storage/local_storage.dart';
 import '../storage/secure_storage.dart';
 import '../../shared/models/reminder.dart';
 import '../../shared/models/tts_config.dart';
@@ -19,7 +18,7 @@ class ReminderSchedulerService {
   final TtsApiClient _ttsApiClient;
 
   Timer? _timer;
-  StreamSubscription? _connectivitySubscription;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isSyncing = false;
   bool _isOnline = true; // 当前网络状态
   String? _lastCheckedTime;
@@ -104,9 +103,15 @@ class ReminderSchedulerService {
   /// 检查特定闹钟音频文件是否已缓存
   Future<bool> isAudioCached(Reminder reminder) async {
     final cacheDir = await getCacheDir();
-    final isMimo = LocalStorage.ttsProviderType == 'mimo';
-    final file = File('${cacheDir.path}/reminder_${reminder.id}.${isMimo ? 'wav' : 'mp3'}');
-    return await file.exists();
+    final wavFile = File('${cacheDir.path}/reminder_${reminder.id}.wav');
+    if (await wavFile.exists() && await wavFile.length() > 200) {
+      return true;
+    }
+    final mp3File = File('${cacheDir.path}/reminder_${reminder.id}.mp3');
+    if (await mp3File.exists() && await mp3File.length() > 200) {
+      return true;
+    }
+    return false;
   }
 
   /// 针对单个闹钟，下载并缓存 TTS 语音包
@@ -126,9 +131,33 @@ class ReminderSchedulerService {
       final request = buildTtsRequest(config, reminder.textTemplate);
       final data = await _ttsApiClient.generate(request);
 
+      if (data.length < 200) {
+        debugPrint('[ReminderScheduler] 定时提醒音频数据过小 (${data.length} 字节)，忽略保存');
+        return null;
+      }
+
       final cacheDir = await getCacheDir();
-      final isMimo = LocalStorage.ttsProviderType == 'mimo';
-      final file = File('${cacheDir.path}/reminder_${reminder.id}.${isMimo ? 'wav' : 'mp3'}');
+      
+      // 检测是 WAV 还是 MP3
+      final isWav = data.length >= 12 &&
+          data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 && // RIFF
+          data[8] == 0x57 && data[9] == 0x41 && data[10] == 0x56 && data[11] == 0x45; // WAVE
+
+      // 清理旧可能存在的冲突后缀文件
+      final oldWav = File('${cacheDir.path}/reminder_${reminder.id}.wav');
+      final oldMp3 = File('${cacheDir.path}/reminder_${reminder.id}.mp3');
+      if (await oldWav.exists()) {
+        try {
+          await oldWav.delete();
+        } catch (_) {}
+      }
+      if (await oldMp3.exists()) {
+        try {
+          await oldMp3.delete();
+        } catch (_) {}
+      }
+
+      final file = File('${cacheDir.path}/reminder_${reminder.id}.${isWav ? 'wav' : 'mp3'}');
       await file.writeAsBytes(data);
       debugPrint('[ReminderScheduler] 定时提醒音频下载成功: ${file.path}');
       return file.path;

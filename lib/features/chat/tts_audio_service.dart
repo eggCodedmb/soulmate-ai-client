@@ -124,12 +124,36 @@ class TtsAudioService {
   Future<String?> getCachedAudioPath(String text, TtsConfig config) async {
     final dir = await _getCacheDir();
     final key = _cacheKey(text, config);
-    final isMimo = LocalStorage.ttsProviderType == 'mimo';
-    final file = File('${dir.path}/$key.${isMimo ? 'wav' : 'mp3'}');
-    if (await file.exists()) {
-      return file.path;
+    // 同时检查 .wav 和 .mp3 以支持动态检测出的不同音频格式
+    final wavFile = File('${dir.path}/$key.wav');
+    if (await wavFile.exists() && await wavFile.length() > 200) {
+      return wavFile.path;
+    }
+    final mp3File = File('${dir.path}/$key.mp3');
+    if (await mp3File.exists() && await mp3File.length() > 200) {
+      return mp3File.path;
     }
     return null;
+  }
+
+  /// 检测音频文件是否为 WAV 格式（检查 RIFF 与 WAVE 文件头）
+  Future<bool> _isWavFile(File file) async {
+    try {
+      if (!await file.exists()) return false;
+      final length = await file.length();
+      if (length < 12) return false;
+
+      final raf = await file.open(mode: FileMode.read);
+      final header = await raf.read(12);
+      await raf.close();
+
+      if (header.length >= 12 &&
+          header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46 && // RIFF
+          header[8] == 0x57 && header[9] == 0x41 && header[10] == 0x56 && header[11] == 0x45) { // WAVE
+        return true;
+      }
+    } catch (_) {}
+    return false;
   }
 
   /// 生成音频（使用流式接口），写入缓存文件，返回文件路径
@@ -142,9 +166,16 @@ class TtsAudioService {
     final request = buildTtsRequest(config, text);
     final dir = await _getCacheDir();
     final key = _cacheKey(text, config);
-    final isMimo = LocalStorage.ttsProviderType == 'mimo';
-    final file = File('${dir.path}/$key.${isMimo ? 'wav' : 'mp3'}');
-    final sink = file.openWrite();
+
+    // 先写入临时文件，生成完毕后再通过文件头特征重命名为正确后缀名，解决编码与后缀不一致引发的播放失败问题
+    final tempFile = File('${dir.path}/$key.tmp');
+    if (await tempFile.exists()) {
+      try {
+        await tempFile.delete();
+      } catch (_) {}
+    }
+
+    final sink = tempFile.openWrite();
 
     try {
       await for (final chunk in _api.generateStream(request)) {
@@ -152,11 +183,34 @@ class TtsAudioService {
       }
       await sink.flush();
       await sink.close();
-      return file.path;
+
+      final length = await tempFile.length();
+      if (length < 200) {
+        debugPrint('[TTS] 生成的音频文件过小 ($length 字节)，可能为无效或错误响应，进行删除');
+        if (await tempFile.exists()) {
+          await tempFile.delete();
+        }
+        return null;
+      }
+
+      // 动态分析实际音频格式
+      final isWav = await _isWavFile(tempFile);
+      final finalFile = File('${dir.path}/$key.${isWav ? 'wav' : 'mp3'}');
+
+      if (await finalFile.exists()) {
+        try {
+          await finalFile.delete();
+        } catch (_) {}
+      }
+
+      await tempFile.rename(finalFile.path);
+      return finalFile.path;
     } catch (e) {
       await sink.close();
-      if (await file.exists()) {
-        await file.delete();
+      if (await tempFile.exists()) {
+        try {
+          await tempFile.delete();
+        } catch (_) {}
       }
       debugPrint('[TTS] 生成音频失败: $e');
       return null;
@@ -212,8 +266,10 @@ class TtsAudioService {
     _whenFinishedFired = false;
     
     try {
+      final isWav = currentFile.endsWith('.wav');
       await _player.startPlayer(
         fromURI: currentFile,
+        codec: isWav ? Codec.pcm16WAV : Codec.mp3,
         whenFinished: () async {
           _whenFinishedFired = true;
           _completionGuardTimer?.cancel();

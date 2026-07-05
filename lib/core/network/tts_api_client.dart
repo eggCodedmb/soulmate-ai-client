@@ -344,6 +344,29 @@ class TtsApiClient {
         ),
       );
 
+      final contentType = response.headers.value('content-type') ?? '';
+      if (contentType.contains('application/json') ||
+          contentType.contains('text/html') ||
+          contentType.contains('text/plain')) {
+        final responseData = await response.data!.stream.toList();
+        final bytes = responseData.expand((x) => x).toList();
+        final decodedStr = utf8.decode(bytes);
+        if (contentType.contains('application/json')) {
+          try {
+            final map = json.decode(decodedStr) as Map<String, dynamic>;
+            final errorMsg = map['message'] ?? map['error'] ?? 'API 错误';
+            throw TtsApiException(errorMsg.toString());
+          } catch (_) {
+            throw TtsApiException(decodedStr);
+          }
+        } else {
+          final cleanStr = decodedStr.length > 200
+              ? '${decodedStr.substring(0, 200)}...'
+              : decodedStr;
+          throw TtsApiException('服务器返回错误 ($contentType): $cleanStr');
+        }
+      }
+
       final stream = response.data!.stream;
       await for (final chunk in stream) {
         yield Uint8List.fromList(chunk);

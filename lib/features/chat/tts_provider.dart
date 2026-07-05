@@ -119,12 +119,15 @@ class TtsNotifier extends StateNotifier<TtsState> {
     final svc = _audioService;
     if (svc == null) return;
 
-    final svcKey = svc.playingMessageKey;
+    final svcKeyRaw = svc.playingMessageKey;
+    final svcKey = svcKeyRaw != null
+        ? (_tempToRealKeyMap[svcKeyRaw] ?? svcKeyRaw)
+        : null;
     final svcIsPlaying = svc.isPlaying;
     final isCompleted = svc.processingState == ProcessingState.completed;
     final isIdle = svc.processingState == ProcessingState.idle;
 
-    debugPrint('[TTS Provider] 状态回调: svcKey=$svcKey, isPlaying=$svcIsPlaying, '
+    debugPrint('[TTS Provider] 状态回调: svcKeyRaw=$svcKeyRaw, svcKey=$svcKey, isPlaying=$svcIsPlaying, '
         'isCompleted=$isCompleted, isIdle=$isIdle, '
         'providerPlayingKey=${state.playingMessageKey}');
 
@@ -215,8 +218,9 @@ class TtsNotifier extends StateNotifier<TtsState> {
 
   void _updateMessageState(String key, MessageTtsEntry entry) {
     if (!mounted) return;
+    final resolvedKey = _tempToRealKeyMap[key] ?? key;
     final newMap = Map<String, MessageTtsEntry>.from(state.messageStates);
-    newMap[key] = entry;
+    newMap[resolvedKey] = entry;
     state = state.copyWith(messageStates: newMap);
   }
 
@@ -358,10 +362,9 @@ class TtsNotifier extends StateNotifier<TtsState> {
     try {
       final path = await svc.generateAndCache(text, config);
       if (path != null) {
-        // 加入播放队列 — enqueue 内部会调用 _onStateChanged 来更新状态
-        // 不需要在这里手动设置 playingMessageKey 或 status，
-        // 让 _onAudioStateChanged 回调统一管理，避免竞态覆盖
-        await svc.enqueue(path, effectiveKey);
+        // 重新解析 Key，防止在生成音频期间临时 Key 已经被关联/替换为了真实 Key
+        final finalKey = _tempToRealKeyMap[messageKey] ?? messageKey;
+        await svc.enqueue(path, finalKey);
       }
     } catch (e) {
       debugPrint('[TTS] 段落生成失败: $e');

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,7 +12,6 @@ import '../../core/network/api_service.dart';
 import '../../core/network/asr_api_client.dart';
 import '../../core/storage/local_storage.dart';
 import '../../core/storage/message_local_storage.dart';
-import '../../core/theme/app_shadows.dart';
 import '../../shared/models/companion.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/tts_config.dart';
@@ -21,13 +19,16 @@ import '../../shared/models/reminder.dart';
 import '../../shared/widgets/soul_toast.dart';
 import 'tts_audio_service.dart';
 import 'tts_provider.dart';
-import 'voice_recorder_widget.dart';
+import 'widgets/chat_app_bar.dart';
+import 'widgets/chat_input_bar.dart';
+import 'widgets/menu_panel.dart';
+import 'widgets/message_bubble.dart';
 
 /// 聊天详情页
 class ChatPage extends ConsumerStatefulWidget {
   final String conversationId;
 
-  const ChatPage({super.key, required this.conversationId});
+  const ChatPage({required this.conversationId, super.key});
 
   @override
   ConsumerState<ChatPage> createState() => _ChatPageState();
@@ -41,7 +42,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _isTyping = false;
   bool _isStreaming = false;
   bool _isLoading = true;
-  bool _hasText = false;
   bool _isVoiceMode = false;
   bool _isTranscribing = false;
   bool _showExtraMenu = false;
@@ -57,29 +57,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   late final int _conversationId;
   late final TtsNotifier _ttsNotifier;
 
-  // 情绪映射
-  static const _emotionMap = {
-    'happy': ('😊', '开心', Color(0xFF34C759)),
-    'sad': ('😢', '难过', Color(0xFF5AC8FA)),
-    'angry': ('😠', '生气', Color(0xFFFF3B30)),
-    'surprised': ('😮', '惊讶', Color(0xFFFF9500)),
-    'love': ('💕', '喜爱', AppColors.brandPink),
-    'thinking': ('🤔', '思考', AppColors.brandLavender),
-    'shy': ('😳', '害羞', Color(0xFFFFB88C)),
-    'excited': ('🤩', '兴奋', Color(0xFFFF9500)),
-  };
-
   @override
   void initState() {
     super.initState();
     _ttsNotifier = ref.read(ttsProvider.notifier);
     _conversationId = int.parse(widget.conversationId);
-    _messageController.addListener(() {
-      final hasText = _messageController.text.trim().isNotEmpty;
-      if (hasText != _hasText) {
-        setState(() => _hasText = hasText);
-      }
-    });
     _inputFocusNode.addListener(() {
       if (_inputFocusNode.hasFocus) {
         setState(() {
@@ -93,7 +75,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   @override
   void dispose() {
     _streamCancelToken?.cancel('页面退出');
-    // 停止 TTS 播放
     _ttsNotifier.stop();
     _messageController.dispose();
     _scrollController.dispose();
@@ -156,7 +137,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     } catch (e) {
       debugPrint('加载消息失败: $e');
       if (mounted) {
-        // 如果本地已有消息，不显示错误
         if (_messages.isEmpty) {
           setState(() => _isLoading = false);
           SoulToast.error(context, '加载消息失败，请检查网络');
@@ -207,7 +187,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     bool hasError = false;
     int chunkCount = 0;
 
-    // 获取 TTS 配置
     final ttsConfig = _effectiveTtsConfig;
 
     try {
@@ -216,10 +195,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           conversationId: _conversationId,
           companionId: _companionId!,
           content: content,
-          llmProviderType: LocalStorage.llmProviderType != 'system' ? LocalStorage.llmProviderType : null,
-          llmBaseUrl: LocalStorage.llmProviderType != 'system' ? LocalStorage.llmBaseUrl : null,
-          llmApiKey: (LocalStorage.llmProviderType != 'system' && (LocalStorage.llmApiKey?.isNotEmpty ?? false)) ? LocalStorage.llmApiKey : null,
-          llmModel: LocalStorage.llmProviderType != 'system' ? LocalStorage.llmModel : null,
+          llmProviderType: LocalStorage.llmProviderType != 'system'
+              ? LocalStorage.llmProviderType
+              : null,
+          llmBaseUrl: LocalStorage.llmProviderType != 'system'
+              ? LocalStorage.llmBaseUrl
+              : null,
+          llmApiKey:
+              (LocalStorage.llmProviderType != 'system' &&
+                  (LocalStorage.llmApiKey?.isNotEmpty ?? false))
+              ? LocalStorage.llmApiKey
+              : null,
+          llmModel: LocalStorage.llmProviderType != 'system'
+              ? LocalStorage.llmModel
+              : null,
         ),
         cancelToken: _streamCancelToken,
       )) {
@@ -236,16 +225,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           chunkCount++;
           final chunk = chatResponse.content!;
           buffer.write(chunk);
-          debugPrint('ChatPage chunk #$chunkCount: "$chunk", bufferLen=${buffer.length}');
-          
+          debugPrint(
+            'ChatPage chunk #$chunkCount: "$chunk", bufferLen=${buffer.length}',
+          );
+
           if (mounted) {
             setState(() {
               if (_isTyping) {
-                // 收到第一个 chunk，隐藏打字指示器，插入占位消息
                 _isTyping = false;
                 _messages.insert(0, aiPlaceholder);
               }
-              // 更新占位消息的内容
               _messages[0] = Message(
                 id: 0,
                 conversationId: _conversationId,
@@ -257,42 +246,42 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             _scrollToBottom();
           }
 
-          // ==================== TTS 流式处理逻辑 ====================
+          // TTS 流式处理逻辑
           if (ttsConfig != null) {
             ttsSentenceBuffer.write(chunk);
             final currentTtsText = ttsSentenceBuffer.toString();
-            
-            // 匹配终止标点：。！？.!? 以及换行符
-            // 避免在简写（如 "Mr."）处误切，这里简单处理：匹配到标点且长度超过一定阈值，或者有换行
             final reg = RegExp(r'[。！？!？\n\r]');
             final matches = reg.allMatches(currentTtsText).toList();
-            
+
             if (matches.isNotEmpty) {
               final lastMatch = matches.last;
-              // 如果标点后还有内容（可能是下一句的开头），只取到标点为止
               final completeText = currentTtsText.substring(0, lastMatch.end);
-              
+
               if (completeText.length > lastTtsSentLength) {
-                final newSentence = completeText.substring(lastTtsSentLength).trim();
-                // 过滤掉只有标点或太短的内容（除非是最后一句）
+                final newSentence = completeText
+                    .substring(lastTtsSentLength)
+                    .trim();
                 if (newSentence.length > 1) {
                   debugPrint('[TTS] 提取到完整句子并加入队列: "$newSentence"');
-                  final messageKey = '${_conversationId}_0'; // 使用占位 ID 作为 key
-                  ref.read(ttsProvider.notifier).enqueueSegment(
-                    messageKey: messageKey,
-                    text: newSentence,
-                    config: ttsConfig,
-                  );
+                  final messageKey = '${_conversationId}_0';
+                  ref
+                      .read(ttsProvider.notifier)
+                      .enqueueSegment(
+                        messageKey: messageKey,
+                        text: newSentence,
+                        config: ttsConfig,
+                      );
                   lastTtsSentLength = lastMatch.end;
                 }
               }
             }
           }
-          // =========================================================
         }
 
         if (chatResponse.done) {
-          debugPrint('SSE完成: done=true, 共 $chunkCount 个有效chunk, 总长 ${buffer.length}');
+          debugPrint(
+            'SSE完成: done=true, 共 $chunkCount 个有效chunk, 总长 ${buffer.length}',
+          );
           break;
         }
       }
@@ -304,49 +293,49 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       }
     }
 
-    debugPrint('流式结束: chunkCount=$chunkCount, bufferLen=${buffer.length}, hasError=$hasError');
-    
+    debugPrint(
+      '流式结束: chunkCount=$chunkCount, bufferLen=${buffer.length}, hasError=$hasError',
+    );
     _streamCancelToken = null;
 
     if (mounted) {
       setState(() {
         _isStreaming = false;
-        _isTyping = false; // 确保隐藏打字指示器
+        _isTyping = false;
       });
 
-      // 如果没有错误且有内容，刷新消息列表获取服务端真实数据
       if (!hasError && buffer.isNotEmpty) {
-        // 处理最后剩余的文本（如果没有以标点结尾）
         if (ttsConfig != null && ttsSentenceBuffer.length > lastTtsSentLength) {
-          final remainingText = ttsSentenceBuffer.toString().substring(lastTtsSentLength).trim();
+          final remainingText = ttsSentenceBuffer
+              .toString()
+              .substring(lastTtsSentLength)
+              .trim();
           if (remainingText.isNotEmpty) {
             debugPrint('[TTS] 处理最后剩余段落: "$remainingText"');
-            ref.read(ttsProvider.notifier).enqueueSegment(
-              messageKey: '${_conversationId}_0',
-              text: remainingText,
-              config: ttsConfig,
-            );
+            ref
+                .read(ttsProvider.notifier)
+                .enqueueSegment(
+                  messageKey: '${_conversationId}_0',
+                  text: remainingText,
+                  config: ttsConfig,
+                );
           }
         }
 
         await _refreshMessages();
-        
-        // 找到最新的一条伴侣消息（即刚刚流式吐字结束刷新后的真实消息，ID > 0）
+
         final aiMessage = _messages.firstWhere(
           (m) => m.senderType == 'companion' && m.id > 0,
           orElse: () => _messages.first,
         );
         final realKey = _messageTtsKey(aiMessage);
         final tempKey = '${_conversationId}_0';
-        
-        // 执行 Key 迁移关联，使正在流式播放的喇叭 Icon 立即被激活并显示为播放中（粉色）状态
-        ref.read(ttsProvider.notifier).associateTempKeyWithRealKey(tempKey, realKey);
-        
-        // 最后触发一次全量生成以持久化完整缓存。
-        // 设置 autoPlay: false，因为此时可能正在播放流式片段，不应中断。
+
+        ref
+            .read(ttsProvider.notifier)
+            .associateTempKeyWithRealKey(tempKey, realKey);
         _autoGenerateTts(buffer.toString(), autoPlay: false);
       } else if (!hasError && buffer.isEmpty) {
-        // AI 没返回任何内容，确保移除可能的空占位
         debugPrint('AI未返回任何内容，移除空占位');
         setState(() {
           if (_messages.isNotEmpty && _messages[0].id == 0) {
@@ -359,30 +348,25 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _deleteMessage(Message message) async {
     try {
-      // 1. 从内存列表中移除 (立即更新 UI)
       setState(() {
         _messages.removeWhere((m) {
           if (message.id > 0) {
             return m.id == message.id;
           } else {
-            // 对于发送失败的消息 (id == 0)，通过内容和创建时间判断
-            return m.id == 0 && m.content == message.content && m.createTime == message.createTime;
+            return m.id == 0 &&
+                m.content == message.content &&
+                m.createTime == message.createTime;
           }
         });
       });
 
-      // 2. 如果是已成功发送的消息（id > 0），则从服务器和本地数据库删除
       if (message.id > 0) {
-        // 从服务器删除
         await ref.read(apiServiceProvider).deleteMessage(message.id);
-        // 从本地数据库删除
         await MessageLocalStorage.instance.deleteMessage(message.id);
-
         if (mounted) {
           SoulToast.success(context, '消息已删除');
         }
       } else {
-        // 对于发送失败的消息，不需要请求接口和数据库，直接提示已被清除
         if (mounted) {
           SoulToast.success(context, '未发送消息已清除');
         }
@@ -391,7 +375,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       debugPrint('删除消息失败: $e');
       if (mounted) {
         SoulToast.error(context, '删除消息失败: ${e.toString()}');
-        // 发生错误时，重新加载列表恢复状态
         _refreshMessages();
       }
     }
@@ -408,7 +391,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         size: 20,
       );
 
-      // 缓存到本地
       await localStorage.cacheMessages(_conversationId, pageResult.records);
 
       if (mounted) {
@@ -439,7 +421,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         size: 20,
       );
 
-      // 缓存到本地
       await localStorage.cacheMessages(_conversationId, pageResult.records);
 
       if (mounted) {
@@ -470,92 +451,137 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     });
   }
 
-  // ==================== TTS 相关 ====================
-
-  /// 获取有效的 TTS 配置（伴侣级优先，否则全局默认）
   TtsConfig? get _effectiveTtsConfig {
     return getEffectiveTtsConfig(_companionTtsConfig);
   }
 
-  /// 生成消息的 TTS key
   String _messageTtsKey(Message message) {
     return '${_conversationId}_${message.id}';
   }
 
-  /// 自动为 AI 回复生成 TTS 音频
   void _autoGenerateTts(String text, {bool autoPlay = true}) {
     if (!mounted) return;
     final config = _effectiveTtsConfig;
     if (config == null) return;
 
-    // 找到最新的 AI 消息（refreshMessages 后 id > 0）
     final aiMessage = _messages.firstWhere(
       (m) => m.senderType == 'companion' && m.id > 0,
       orElse: () => _messages.first,
     );
 
     final key = _messageTtsKey(aiMessage);
-    ref.read(ttsProvider.notifier).generateForMessage(
-      messageKey: key,
-      text: text,
-      config: config,
-      autoPlay: autoPlay,
-    );
+    ref
+        .read(ttsProvider.notifier)
+        .generateForMessage(
+          messageKey: key,
+          text: text,
+          config: config,
+          autoPlay: autoPlay,
+        );
   }
 
-  /// 点击喇叭：播放/暂停/重新生成
-  void _onSpeakerTap(Message message) {
-    if (!mounted) return;
-    final key = _messageTtsKey(message);
-    final entry = ref.read(ttsProvider).getMessageState(key);
-    final notifier = ref.read(ttsProvider.notifier);
-
-    switch (entry.status) {
-      case MessageTtsStatus.ready:
-        notifier.playMessage(key);
-        break;
-      case MessageTtsStatus.playing:
-        notifier.togglePause(key);
-        break;
-      case MessageTtsStatus.paused:
-        notifier.togglePause(key);
-        break;
-      case MessageTtsStatus.error:
-      case MessageTtsStatus.none:
-        // 重新生成并播放
-        final config = _effectiveTtsConfig;
-        if (config != null) {
-          notifier.generateForMessage(
-            messageKey: key,
-            text: message.content,
-            config: config,
-            autoPlay: true,
-          );
-        }
-        break;
-      case MessageTtsStatus.generating:
-        // 正在生成，不做操作
-        break;
-    }
-  }
-
-  /// 获取当前伴侣的 TTS 配置，用于显示
-  TtsConfig? _getCompanionTtsConfig() {
-    return _companionTtsConfig;
-  }
-
-  /// 获取伴侣性格主题色
   Color _getPersonalityColor(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final key = _companionPersonalities.isNotEmpty
         ? _companionPersonalities.first
         : 'gentle';
     final colors =
-        AppColors.personalityColors[key] ?? AppColors.personalityColors['gentle']!;
+        AppColors.personalityColors[key] ??
+        AppColors.personalityColors['gentle']!;
     return isDark ? colors.dark : colors.light;
   }
 
-  // ==================== UI 构建 ====================
+  void _toggleExtraMenu() {
+    HapticFeedback.lightImpact();
+    if (_showExtraMenu) {
+      setState(() {
+        _showExtraMenu = false;
+      });
+    } else {
+      final hasKeyboard = _inputFocusNode.hasFocus;
+      if (hasKeyboard) {
+        _inputFocusNode.unfocus();
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) {
+            setState(() {
+              _showExtraMenu = true;
+            });
+          }
+        });
+      } else {
+        setState(() {
+          _showExtraMenu = true;
+        });
+      }
+    }
+  }
+
+  void _startAiCall() {
+    if (_companionId == null) return;
+
+    final mockReminder = Reminder(
+      id: 0,
+      userId: 0,
+      companionId: _companionId!,
+      companionName: _companionName ?? 'AI伴侣',
+      companionAvatarUrl: _companionAvatarUrl,
+      reminderTime: '',
+      textTemplate: '你好呀！很高兴接到你的电话，今天有什么想和我聊聊的吗？',
+      type: 'AI_CALL',
+    );
+
+    context.push(
+      '/call/0?outgoing=true&conversationId=$_conversationId',
+      extra: mockReminder,
+    );
+  }
+
+  Future<void> _onVoiceSend(String audioPath, int durationMs) async {
+    if (_companionId == null || _isStreaming) return;
+
+    setState(() => _isTranscribing = true);
+
+    try {
+      final String transcribedText;
+
+      if (LocalStorage.asrProviderType == 'custom') {
+        final asrClient = AsrApiClient();
+        transcribedText = await asrClient.transcribe(audioPath);
+      } else {
+        final apiService = ref.read(apiServiceProvider);
+        transcribedText = await apiService.transcribeAudio(audioPath);
+      }
+
+      if (!mounted) return;
+
+      if (transcribedText.isEmpty) {
+        SoulToast.error(context, '语音识别失败，未识别出文字');
+        setState(() => _isTranscribing = false);
+        return;
+      }
+
+      _messageController.text = transcribedText;
+      setState(() {
+        _isTranscribing = false;
+        _isVoiceMode = false; // 切回文本模式，方便用户确认
+      });
+      _inputFocusNode.requestFocus();
+
+      SoulToast.success(context, '语音识别完成');
+    } on ApiException catch (e) {
+      debugPrint('ASR 接口异常: $e');
+      if (mounted) {
+        SoulToast.error(context, e.message);
+        setState(() => _isTranscribing = false);
+      }
+    } on Exception catch (e) {
+      debugPrint('语音识别失败: $e');
+      if (mounted) {
+        SoulToast.error(context, '语音识别失败，请重试');
+        setState(() => _isTranscribing = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -563,8 +589,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0D0D0F) : const Color(0xFFF5F5F9),
-      appBar: _buildAppBar(context, isDark),
+      backgroundColor: isDark
+          ? const Color(0xFF0D0D0F)
+          : const Color(0xFFF5F5F9),
+      appBar: ChatAppBar(
+        companionName: _companionName,
+        companionAvatarUrl: _companionAvatarUrl,
+        companionId: _companionId,
+      ),
       body: _isLoading
           ? _buildLoadingState(context, isDark)
           : GestureDetector(
@@ -609,238 +641,54 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     ),
                   ),
                   if (_isTyping) _buildTypingIndicator(context, isDark),
-                  _buildInputBar(context, isDark),
-                  _buildMenuPanel(context, isDark),
-                ],
-              ),
-            ),
-    );
-  }
-
-  // ==================== AppBar ====================
-
-  PreferredSizeWidget _buildAppBar(BuildContext context, bool isDark) {
-    final surfaceColor = isDark ? const Color(0xFF0D0D0F) : Colors.white;
-
-    return AppBar(
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      backgroundColor: Colors.transparent,
-      flexibleSpace: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: Container(
-            decoration: BoxDecoration(
-              color: surfaceColor.withValues(alpha: 0.88),
-              border: Border(
-                bottom: BorderSide(
-                  color: (isDark ? Colors.white : Colors.black)
-                      .withValues(alpha: 0.06),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-      titleSpacing: 0,
-      title: Row(
-        children: [
-          const SizedBox(width: 8),
-          _buildAppBarAvatar(context, isDark),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _companionName ?? 'AI伴侣',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                  ChatInputBar(
+                    messageController: _messageController,
+                    inputFocusNode: _inputFocusNode,
+                    isVoiceMode: _isVoiceMode,
+                    isTranscribing: _isTranscribing,
+                    isStreaming: _isStreaming,
+                    toggleExtraMenu: _toggleExtraMenu,
+                    onSendMessage: _sendMessage,
+                    onVoiceSend: _onVoiceSend,
+                    onCancelStream: () {
+                      _streamCancelToken?.cancel('用户取消');
+                      _streamCancelToken = null;
+                    },
+                    onVoiceModeChanged: (val) {
+                      setState(() {
+                        _isVoiceMode = val;
+                        if (!_isVoiceMode) {
+                          _inputFocusNode.requestFocus();
+                        } else {
+                          _inputFocusNode.unfocus();
+                        }
+                      });
+                    },
                   ),
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF34C759),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '在线',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.5)
-                            : Colors.black.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        IconButton(
-          icon: Icon(
-            Icons.more_horiz_rounded,
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.6)
-                : Colors.black.withValues(alpha: 0.4),
-          ),
-          onPressed: () {
-            if (_companionId != null) {
-              context.push('/partners/detail/$_companionId');
-            }
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAppBarAvatar(BuildContext context, bool isDark) {
-    return Container(
-      width: 38,
-      height: 38,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [
-            AppColors.brandPink.withValues(alpha: 0.85),
-            AppColors.brandLavender.withValues(alpha: 0.85),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.brandPink.withValues(alpha: 0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ClipOval(
-        child: _companionAvatarUrl != null && _companionAvatarUrl!.isNotEmpty
-            ? CachedNetworkImage(
-                imageUrl: getFullUrl(ref, _companionAvatarUrl!),
-                width: 38,
-                height: 38,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => _buildAvatarFallback(38),
-                errorWidget: (_, __, ___) => _buildAvatarFallback(38),
-              )
-            : _buildAvatarFallback(38),
-      ),
-    );
-  }
-
-  Widget _buildAvatarFallback(double size) {
-    return Center(
-      child: Icon(
-        Icons.favorite_rounded,
-        size: size * 0.45,
-        color: Colors.white,
-      ),
-    );
-  }
-
-  // ==================== 加载状态 ====================
-
-  Widget _buildLoadingState(BuildContext context, bool isDark) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 36,
-            height: 36,
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              color: AppColors.brandPink.withValues(alpha: 0.6),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '加载对话中...',
-            style: TextStyle(
-              fontSize: 14,
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.4)
-                  : Colors.black.withValues(alpha: 0.3),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ==================== 空状态 ====================
-
-  Widget _buildEmptyState(BuildContext context, bool isDark) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 88,
-            height: 88,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.brandPink.withValues(alpha: 0.12),
-                  AppColors.brandLavender.withValues(alpha: 0.12),
+                  MenuPanel(
+                    showExtraMenu: _showExtraMenu,
+                    onCloseMenu: () {
+                      setState(() {
+                        _showExtraMenu = false;
+                      });
+                    },
+                    onStartAiCall: _startAiCall,
+                  ),
                 ],
               ),
             ),
-            child: Icon(
-              Icons.chat_bubble_outline_rounded,
-              size: 40,
-              color: AppColors.brandPink.withValues(alpha: 0.5),
-            ),
-          )
-              .animate(onPlay: (c) => c.repeat(reverse: true))
-              .scaleXY(begin: 1, end: 1.06, duration: 2500.ms, curve: Curves.easeInOut),
-          const SizedBox(height: 24),
-          Text(
-            '开始和${_companionName ?? 'TA'}聊天吧',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.7)
-                  : const Color(0xFF1A1A2E),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '发送一条消息开启对话 💬',
-            style: TextStyle(
-              fontSize: 14,
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.35)
-                  : Colors.black.withValues(alpha: 0.3),
-            ),
-          ),
-        ],
-      ),
     );
   }
-
-  // ==================== 消息列表 ====================
 
   Widget _buildMessageList(BuildContext context, bool isDark) {
+    final personalityColor = _getPersonalityColor(context);
+    final effectiveConfig = _effectiveTtsConfig;
+
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollUpdateNotification &&
-            notification.metrics.pixels >= notification.metrics.maxScrollExtent - 200) {
+            notification.metrics.pixels >=
+                notification.metrics.maxScrollExtent - 200) {
           _loadMoreMessages();
         }
         return false;
@@ -851,23 +699,31 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         itemCount: _messages.length + (_hasMore ? 1 : 0),
         itemBuilder: (context, index) {
-          // 加载更多指示器（在列表顶部，即 reversed 列表的末尾）
           if (index == _messages.length) {
             return _buildLoadMoreIndicator(isDark);
           }
 
           final message = _messages[index];
           final showDateSeparator = _shouldShowDateSeparator(index);
+          final key = _messageTtsKey(message);
 
-          return _MessageBubbleWrapper(
-            isNew: message.id == 0,
-            child: Column(
-              children: [
-                if (showDateSeparator)
-                  _buildDateSeparator(message.createTime, isDark),
-                _buildMessageBubble(context, message, isDark),
-              ],
-            ),
+          return Column(
+            children: [
+              if (showDateSeparator)
+                _buildDateSeparator(message.createTime, isDark),
+              MessageBubble(
+                message: message,
+                companionAvatarUrl: _companionAvatarUrl,
+                personalityColor: personalityColor,
+                isStreaming: _isStreaming,
+                messageKey: key,
+                effectiveTtsConfig: effectiveConfig,
+                onLongPress: () {
+                  HapticFeedback.heavyImpact();
+                  _showMessageOptions(context, message, isDark);
+                },
+              ),
+            ],
           );
         },
       ),
@@ -910,8 +766,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         current.createTime!.year != older.createTime!.year;
   }
 
-  // ==================== 日期分隔符 ====================
-
   Widget _buildDateSeparator(DateTime? dateTime, bool isDark) {
     if (dateTime == null) return const SizedBox.shrink();
 
@@ -934,129 +788,38 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 20),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-          decoration: BoxDecoration(
-            color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.35)
-                  : Colors.black.withValues(alpha: 0.3),
-            ),
-          ),
-        ),
-      )
-          .animate()
-          .fadeIn(duration: 300.ms)
-          .scale(begin: const Offset(0.9, 0.9), duration: 300.ms, curve: Curves.easeOutBack),
-    );
-  }
-
-  // ==================== 消息气泡 ====================
-
-  Widget _buildMessageBubble(
-    BuildContext context,
-    Message message,
-    bool isDark,
-  ) {
-    final isUser = message.senderType == 'user';
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        mainAxisAlignment:
-            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isUser) ...[
-            _buildMessageAvatar(context, isDark),
-            const SizedBox(width: 10),
-          ],
-          Flexible(
-            child: Column(
-              crossAxisAlignment:
-                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                GestureDetector(
-                  onLongPress: () {
-                    HapticFeedback.heavyImpact();
-                    _showMessageOptions(context, message, isDark);
-                  },
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: MediaQuery.of(context).size.width * 0.72,
+      child:
+          Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: (isDark ? Colors.white : Colors.black).withValues(
+                      alpha: 0.05,
                     ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 11,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: isUser
-                            ? const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  AppColors.brandPink,
-                                  Color(0xFFFF8FA8),
-                                ],
-                              )
-                            : null,
-                        color: isUser
-                            ? null
-                            : isDark
-                                ? const Color(0xFF1C1C1E)
-                                : Colors.white,
-                        borderRadius: BorderRadius.only(
-                          topLeft: const Radius.circular(20),
-                          topRight: const Radius.circular(20),
-                          bottomLeft: Radius.circular(isUser ? 20 : 6),
-                          bottomRight: Radius.circular(isUser ? 6 : 20),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: isUser
-                                ? AppColors.brandPink.withValues(alpha: 0.25)
-                                : Colors.black
-                                    .withValues(alpha: isDark ? 0.12 : 0.04),
-                            blurRadius: isUser ? 10 : 6,
-                            offset: Offset(0, isUser ? 3 : 1),
-                          ),
-                        ],
-                      ),
-                      child: _buildMessageText(
-                        message, isUser, isDark,
-                      ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.35)
+                          : Colors.black.withValues(alpha: 0.3),
                     ),
                   ),
                 ),
-
-                // 情绪标签（仅AI消息）
-                if (!isUser && message.emotionTag != null && message.emotionTag!.isNotEmpty)
-                  _buildEmotionTag(message.emotionTag!, isDark),
-
-                // TTS 喇叭按钮（仅AI消息，流式完成且有TTS配置时显示）
-                if (!isUser && message.id > 0 && _effectiveTtsConfig != null)
-                  _buildTtsButton(message, isDark),
-
-                const SizedBox(height: 4),
-                _buildMessageMeta(message, isUser, isDark),
-              ],
-            ),
-          ),
-          if (isUser) ...[
-            const SizedBox(width: 10),
-            _buildReadStatus(message, isDark),
-          ],
-        ],
-      ),
+              )
+              .animate()
+              .fadeIn(duration: 300.ms)
+              .scale(
+                begin: const Offset(0.9, 0.9),
+                duration: 300.ms,
+                curve: Curves.easeOutBack,
+              ),
     );
   }
 
@@ -1088,508 +851,138 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  Widget _buildEmotionTag(String emotionTag, bool isDark) {
-    final entry = _emotionMap[emotionTag];
-    final emoji = entry?.$1 ?? '💭';
-    final label = entry?.$2 ?? emotionTag;
-    final color = entry?.$3 ?? AppColors.brandLavender;
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 6, left: 4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: isDark ? 0.15 : 0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 12)),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: color.withValues(alpha: 0.8),
-              ),
-            ),
-          ],
-        ),
+  Widget _buildAvatarFallback(double size) {
+    return Center(
+      child: Icon(
+        Icons.favorite_rounded,
+        size: size * 0.45,
+        color: Colors.white,
       ),
     );
   }
-
-  /// TTS 喇叭按钮
-  Widget _buildTtsButton(Message message, bool isDark) {
-    final key = _messageTtsKey(message);
-    // 使用 watch 实现响应式更新
-    final entry = ref.watch(ttsProvider).getMessageState(key);
-
-    // 根据状态决定图标和行为
-    IconData icon;
-    Color iconColor;
-    bool isAnimated = false;
-
-    switch (entry.status) {
-      case MessageTtsStatus.generating:
-        icon = Icons.hourglass_top_rounded;
-        iconColor = AppColors.brandPink.withValues(alpha: 0.5);
-        isAnimated = true;
-        break;
-      case MessageTtsStatus.ready:
-        icon = Icons.volume_up_rounded;
-        iconColor = isDark
-            ? Colors.white.withValues(alpha: 0.35)
-            : Colors.black.withValues(alpha: 0.25);
-        break;
-      case MessageTtsStatus.playing:
-        icon = Icons.volume_up_rounded;
-        iconColor = AppColors.brandPink;
-        isAnimated = true;
-        break;
-      case MessageTtsStatus.paused:
-        icon = Icons.volume_off_rounded;
-        iconColor = AppColors.brandPink.withValues(alpha: 0.6);
-        break;
-      case MessageTtsStatus.error:
-        icon = Icons.refresh_rounded;
-        iconColor = Colors.orange.withValues(alpha: 0.6);
-        break;
-      case MessageTtsStatus.none:
-        icon = Icons.volume_up_rounded;
-        iconColor = isDark
-            ? Colors.white.withValues(alpha: 0.2)
-            : Colors.black.withValues(alpha: 0.15);
-        break;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, left: 4),
-      child: GestureDetector(
-        onTap: () => _onSpeakerTap(message),
-        child: isAnimated && entry.status == MessageTtsStatus.generating
-            ? SizedBox(
-                width: 28,
-                height: 28,
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.brandPink.withValues(alpha: 0.5),
-                  ),
-                ),
-              )
-            : AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: entry.status == MessageTtsStatus.playing
-                      ? AppColors.brandPink.withValues(alpha: 0.1)
-                      : Colors.transparent,
-                  shape: BoxShape.circle,
-                ),
-                child: isAnimated && entry.status == MessageTtsStatus.playing
-                    ? _PulsingIcon(icon: icon, color: iconColor, size: 18)
-                    : Icon(icon, color: iconColor, size: 18),
-              ),
-      ),
-    );
-  }
-
-  Widget _buildMessageMeta(Message message, bool isUser, bool isDark) {
-    if (message.createTime == null) return const SizedBox.shrink();
-    final time = message.createTime!;
-    final timeStr =
-        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Text(
-        timeStr,
-        style: TextStyle(
-          fontSize: 11,
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.2)
-              : Colors.black.withValues(alpha: 0.2),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReadStatus(Message message, bool isDark) {
-    return Icon(
-      message.readStatus == 1
-          ? Icons.done_all_rounded
-          : Icons.done_rounded,
-      size: 14,
-      color: message.readStatus == 1
-          ? AppColors.brandPink
-          : isDark
-              ? Colors.white.withValues(alpha: 0.2)
-              : Colors.black.withValues(alpha: 0.2),
-    );
-  }
-
-  String _cleanMessageContent(String content) {
-    return content
-        .replaceAll(RegExp(r'<command.*?>.*?</command>', dotAll: true), '')
-        .replaceAll(RegExp(r'<command.*$', dotAll: true), '')
-        .trim();
-  }
-
-  /// 构建消息文本，流式传输时带闪烁光标
-  Widget _buildMessageText(Message message, bool isUser, bool isDark) {
-    final isStreamingThis = _isStreaming &&
-        !isUser &&
-        message.id == 0;
-
-    final textColor = isUser
-        ? Colors.white
-        : isDark
-            ? Colors.white.withValues(alpha: 0.88)
-            : const Color(0xFF1A1A2E);
-
-    final cleanContent = _cleanMessageContent(message.content);
-
-    if (!isStreamingThis) {
-      return Text(
-        cleanContent,
-        style: TextStyle(fontSize: 15, height: 1.55, color: textColor),
-      );
-    }
-
-    // 流式传输中：直接展示文本 + 闪烁光标
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(text: cleanContent),
-          const WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: _BlinkingCursor(),
-          ),
-        ],
-      ),
-      style: TextStyle(fontSize: 15, height: 1.55, color: textColor),
-    );
-  }
-
-  // ==================== 打字指示器 ====================
 
   Widget _buildTypingIndicator(BuildContext context, bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: Row(
+      child:
+          Row(
+                children: [
+                  _buildMessageAvatar(context, isDark),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
+                        bottomRight: Radius.circular(20),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha: isDark ? 0.12 : 0.04,
+                          ),
+                          blurRadius: 6,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: _TypingDots(isDark: isDark),
+                  ),
+                ],
+              )
+              .animate()
+              .fadeIn(duration: 200.ms)
+              .slideY(
+                begin: 0.2,
+                end: 0,
+                duration: 200.ms,
+                curve: Curves.easeOutCubic,
+              ),
+    );
+  }
+
+  Widget _buildLoadingState(BuildContext context, bool isDark) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _buildMessageAvatar(context, isDark),
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(20),
-                topRight: Radius.circular(20),
-                bottomRight: Radius.circular(20),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.04),
-                  blurRadius: 6,
-                  offset: const Offset(0, 1),
-                ),
-              ],
+          SizedBox(
+            width: 36,
+            height: 36,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: AppColors.brandPink.withValues(alpha: 0.6),
             ),
-            child: _TypingDots(isDark: isDark),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '加载对话中...',
+            style: TextStyle(
+              fontSize: 14,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.4)
+                  : Colors.black.withValues(alpha: 0.3),
+            ),
           ),
         ],
-      )
-          .animate()
-          .fadeIn(duration: 200.ms)
-          .slideY(begin: 0.2, end: 0, duration: 200.ms, curve: Curves.easeOutCubic),
-    );
-  }
-
-  // ==================== 输入栏 ====================
-
-  Widget _buildInputBar(BuildContext context, bool isDark) {
-    final surfaceColor = isDark ? const Color(0xFF0D0D0F) : Colors.white;
-
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: EdgeInsets.only(
-            left: 12,
-            right: 8,
-            top: 10,
-            bottom: MediaQuery.of(context).padding.bottom + 10,
-          ),
-          decoration: BoxDecoration(
-            color: surfaceColor.withValues(alpha: 0.9),
-            border: Border(
-              top: BorderSide(
-                color: (isDark ? Colors.white : Colors.black)
-                    .withValues(alpha: 0.06),
-              ),
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              // 菜单功能按钮（+ 按钮）
-              _buildMenuButton(isDark),
-              const SizedBox(width: 8),
-              // 左侧：文本输入 或 语音按钮（带动画切换）
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 280),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeOutCubic,
-                  transitionBuilder: (child, animation) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SizeTransition(
-                        sizeFactor: animation,
-                        axis: Axis.horizontal,
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: _isVoiceMode
-                      ? _buildVoiceRecorder(isDark)
-                      : _buildTextField(isDark),
-                ),
-              ),
-              const SizedBox(width: 10),
-              _buildSendButton(isDark),
-            ],
-          ),
-        ),
       ),
     );
   }
 
-  /// 输入框左侧菜单功能按钮
-  Widget _buildMenuButton(bool isDark) {
-    return GestureDetector(
-      onTap: _toggleExtraMenu,
-      child: Container(
-        height: 44,
-        width: 44,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F3F8),
-        ),
-        child: Icon(
-          Icons.add_rounded,
-          size: 24,
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.6)
-              : Colors.black.withValues(alpha: 0.5),
-        ),
-      ),
-    );
-  }
-
-  /// 展开或收起底部额外功能菜单
-  void _toggleExtraMenu() {
-    HapticFeedback.lightImpact();
-    if (_showExtraMenu) {
-      setState(() {
-        _showExtraMenu = false;
-      });
-    } else {
-      final hasKeyboard = _inputFocusNode.hasFocus;
-      if (hasKeyboard) {
-        _inputFocusNode.unfocus();
-        Future.delayed(const Duration(milliseconds: 150), () {
-          if (mounted) {
-            setState(() {
-              _showExtraMenu = true;
-            });
-          }
-        });
-      } else {
-        setState(() {
-          _showExtraMenu = true;
-        });
-      }
-    }
-  }
-
-  /// 构建底部抽屉菜单面板（与输入框同层，向上推）
-  Widget _buildMenuPanel(BuildContext context, bool isDark) {
-    final panelHeight = _showExtraMenu ? 260.0 : 0.0;
-    final backgroundColor = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOut,
-      height: panelHeight,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        boxShadow: [
-          if (_showExtraMenu)
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
-              blurRadius: 10,
-              offset: const Offset(0, -4),
-            ),
-        ],
-      ),
-      clipBehavior: Clip.hardEdge,
-      child: GestureDetector(
-        // 支持下滑手势收起菜单
-        onVerticalDragUpdate: (details) {
-          if (details.delta.dy > 8) {
-            setState(() {
-              _showExtraMenu = false;
-            });
-          }
-        },
-        child: SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            physics: const NeverScrollableScrollPhysics(),
-            child: Column(
-              children: [
-                // 顶部拖动手柄
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 12),
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: (isDark ? Colors.white : Colors.black)
-                        .withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                SizedBox(
-                  height: 220, // 固定高度给内部 GridView 留出空间，避免 animation 过程中抖动或溢出
-                  child: GridView.count(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    crossAxisCount: 4,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 0.82,
-                    children: [
-                      _buildPanelMenuItem(
-                        icon: Icons.image_rounded,
-                        label: '相册',
-                        color: const Color(0xFF34C759),
-                        onTap: () {
-                          SoulToast.success(context, '打开相册');
-                        },
-                      ),
-                      _buildPanelMenuItem(
-                        icon: Icons.photo_camera_rounded,
-                        label: '拍摄',
-                        color: const Color(0xFF007AFF),
-                        onTap: () {
-                          SoulToast.success(context, '开启相机拍摄');
-                        },
-                      ),
-                      _buildPanelMenuItem(
-                        icon: Icons.phone_in_talk_rounded,
-                        label: 'AI通话',
-                        color: AppColors.brandPink,
-                        onTap: () {
-                          setState(() => _showExtraMenu = false);
-                          _startAiCall();
-                        },
-                      ),
-                      _buildPanelMenuItem(
-                        icon: Icons.location_on_rounded,
-                        label: '位置',
-                        color: const Color(0xFFFF9500),
-                        onTap: () {
-                          SoulToast.success(context, '获取位置信息');
-                        },
-                      ),
-                      _buildPanelMenuItem(
-                        icon: Icons.monetization_on_rounded,
-                        label: '红包',
-                        color: const Color(0xFFFF3B30),
-                        onTap: () {
-                          SoulToast.success(context, '发送红包');
-                        },
-                      ),
-                      _buildPanelMenuItem(
-                        icon: Icons.folder_rounded,
-                        label: '文件',
-                        color: const Color(0xFF5AC8FA),
-                        onTap: () {
-                          SoulToast.success(context, '发送文件');
-                        },
-                      ),
-                      _buildPanelMenuItem(
-                        icon: Icons.contact_phone_rounded,
-                        label: '名片',
-                        color: const Color(0xFF5856D6),
-                        onTap: () {
-                          SoulToast.success(context, '分享名片');
-                        },
-                      ),
-                      _buildPanelMenuItem(
-                        icon: Icons.settings_rounded,
-                        label: '设置',
-                        color: const Color(0xFF8E8E93),
-                        onTap: () {
-                          SoulToast.success(context, '应用设置');
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 菜单面板中的子项网格组件构建
-  Widget _buildPanelMenuItem({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
-      },
+  Widget _buildEmptyState(BuildContext context, bool isDark) {
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(
-              icon,
-              size: 28,
-              color: color,
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.brandPink.withValues(alpha: 0.12),
+                      AppColors.brandLavender.withValues(alpha: 0.12),
+                    ],
+                  ),
+                ),
+                child: Icon(
+                  Icons.chat_bubble_outline_rounded,
+                  size: 40,
+                  color: AppColors.brandPink.withValues(alpha: 0.5),
+                ),
+              )
+              .animate(onPlay: (c) => c.repeat(reverse: true))
+              .scaleXY(
+                begin: 1,
+                end: 1.06,
+                duration: 2500.ms,
+                curve: Curves.easeInOut,
+              ),
+          const SizedBox(height: 24),
+          Text(
+            '开始和${_companionName ?? 'TA'}聊天吧',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.7)
+                  : const Color(0xFF1A1A2E),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            label,
+            '发送一条消息开启对话 💬',
             style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              color: isDark ? Colors.white70 : Colors.black87,
+              fontSize: 14,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.35)
+                  : Colors.black.withValues(alpha: 0.3),
             ),
           ),
         ],
@@ -1597,287 +990,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  /// 发起 AI 通话
-  void _startAiCall() {
-    if (_companionId == null) return;
-    
-    final mockReminder = Reminder(
-      id: 0,
-      userId: 0,
-      companionId: _companionId!,
-      companionName: _companionName ?? 'AI伴侣',
-      companionAvatarUrl: _companionAvatarUrl,
-      reminderTime: '',
-      textTemplate: '你好呀！很高兴接到你的电话，今天有什么想和我聊聊的吗？',
-      type: 'AI_CALL',
-    );
-
-    context.push('/call/0?outgoing=true&conversationId=$_conversationId', extra: mockReminder);
-  }
-
-  /// 文本输入框
-  Widget _buildTextField(bool isDark) {
-    return Container(
-      key: const ValueKey('textfield'),
-      constraints: const BoxConstraints(minHeight: 44),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F3F8),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: TextField(
-        controller: _messageController,
-        focusNode: _inputFocusNode,
-        maxLines: 5,
-        minLines: 1,
-        textInputAction: TextInputAction.newline,
-        style: TextStyle(
-          fontSize: 15,
-          color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-        ),
-        decoration: InputDecoration(
-          hintText: '输入消息...',
-          hintStyle: TextStyle(
-            fontSize: 15,
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.25)
-                : Colors.black.withValues(alpha: 0.2),
-          ),
-          filled: true,
-          fillColor: Colors.transparent,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 18,
-            vertical: 12,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(22),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(22),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(22),
-            borderSide: BorderSide.none,
-          ),
-        ),
-        onSubmitted: (_) => _sendMessage(),
-      ),
-    );
-  }
-
-  /// 语音录制组件
-  Widget _buildVoiceRecorder(bool isDark) {
-    // ASR 识别中：显示加载状态
-    if (_isTranscribing) {
-      return Container(
-        key: const ValueKey('transcribing'),
-        height: 48,
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F3F8),
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.brandPink.withValues(alpha: 0.6),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                '语音识别中...',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.5)
-                      : Colors.black.withValues(alpha: 0.4),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return VoiceRecorderWidget(
-      key: const ValueKey('voicerecorder'),
-      onSend: _onVoiceSend,
-      onCancel: () {
-        // 取消录音，不做任何操作
-      },
-    );
-  }
-
-  /// 语音发送回调：录音完成 → ASR 识别 → 发送消息
-  Future<void> _onVoiceSend(String audioPath, int durationMs) async {
-    if (_companionId == null || _isStreaming) return;
-
-    setState(() => _isTranscribing = true);
-
-    try {
-      // 根据 ASR 配置选择识别服务
-      final String transcribedText;
-
-      if (LocalStorage.asrProviderType == 'custom') {
-        // 自定义接入商（OpenAI Whisper API 格式）
-        final asrClient = AsrApiClient();
-        transcribedText = await asrClient.transcribe(audioPath);
-      } else {
-        // 系统默认（后端内置 ASR）
-        final apiService = ref.read(apiServiceProvider);
-        transcribedText = await apiService.transcribeAudio(audioPath);
-      }
-
-      if (!mounted) return;
-
-      if (transcribedText.isEmpty) {
-        SoulToast.error(context, '语音识别失败，未识别出文字');
-        setState(() => _isTranscribing = false);
-        return;
-      }
-
-      // 2. 将识别出的文字填入输入框，用户可编辑后发送
-      _messageController.text = transcribedText;
-      setState(() {
-        _hasText = true;
-        _isTranscribing = false;
-        _isVoiceMode = false; // 切回文本模式，方便用户确认
-      });
-      _inputFocusNode.requestFocus();
-
-      SoulToast.success(context, '语音识别完成');
-    } on ApiException catch (e) {
-      debugPrint('ASR 接口异常: $e');
-      if (mounted) {
-        SoulToast.error(context, e.message);
-        setState(() => _isTranscribing = false);
-      }
-    } on Exception catch (e) {
-      debugPrint('语音识别失败: $e');
-      if (mounted) {
-        SoulToast.error(context, '语音识别失败，请重试');
-        setState(() => _isTranscribing = false);
-      }
-    }
-  }
-
-  Widget _buildSendButton(bool isDark) {
-    // 流式传输中：显示停止按钮
-    if (_isStreaming) {
-      return GestureDetector(
-        onTap: () {
-          _streamCancelToken?.cancel('用户取消');
-          _streamCancelToken = null;
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F3F8),
-          ),
-          child: Icon(
-            Icons.stop_rounded,
-            size: 22,
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.6)
-                : Colors.black.withValues(alpha: 0.5),
-          ),
-        ),
-      );
-    }
-
-    // 有文本时：显示发送按钮
-    if (_hasText) {
-      return GestureDetector(
-        onTap: _sendMessage,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut,
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [AppColors.brandPink, Color(0xFFFF8FA8)],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.brandPink.withValues(alpha: 0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: const Icon(
-            Icons.arrow_upward_rounded,
-            size: 22,
-            color: Colors.white,
-          ),
-        ),
-      );
-    }
-
-    // 无文本时：显示麦克风/键盘切换按钮
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        setState(() {
-          _isVoiceMode = !_isVoiceMode;
-          if (!_isVoiceMode) {
-            // 切回文本模式时，自动聚焦输入框
-            _inputFocusNode.requestFocus();
-          } else {
-            // 切到语音模式时，取消焦点
-            _inputFocusNode.unfocus();
-          }
-        });
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOut,
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _isVoiceMode
-              ? AppColors.brandPink.withValues(alpha: 0.12)
-              : isDark
-                  ? const Color(0xFF1C1C1E)
-                  : const Color(0xFFF2F3F8),
-        ),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: Icon(
-            _isVoiceMode ? Icons.keyboard_rounded : Icons.mic_rounded,
-            key: ValueKey(_isVoiceMode),
-            size: 22,
-            color: _isVoiceMode
-                ? AppColors.brandPink
-                : isDark
-                    ? Colors.white.withValues(alpha: 0.25)
-                    : Colors.black.withValues(alpha: 0.2),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showMessageOptions(
-    BuildContext context,
-    Message message,
-    bool isDark,
-  ) {
+  void _showMessageOptions(BuildContext context, Message message, bool isDark) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1895,8 +1008,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: (isDark ? Colors.white : Colors.black)
-                      .withValues(alpha: 0.15),
+                  color: (isDark ? Colors.white : Colors.black).withValues(
+                    alpha: 0.15,
+                  ),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1941,8 +1055,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 }
 
-// ==================== 打字动画组件 ====================
-
 class _TypingDots extends StatefulWidget {
   final bool isDark;
   const _TypingDots({required this.isDark});
@@ -1979,8 +1091,10 @@ class _TypingDotsState extends State<_TypingDots>
           mainAxisSize: MainAxisSize.min,
           children: List.generate(3, (i) {
             final delay = i * 0.15;
-            final progress = ((_controller.value - delay) % 1.0)
-                .clamp(0.0, 1.0);
+            final progress = ((_controller.value - delay) % 1.0).clamp(
+              0.0,
+              1.0,
+            );
             final bounce = (progress < 0.5)
                 ? (progress * 2)
                 : (2 - progress * 2);
@@ -2002,187 +1116,6 @@ class _TypingDotsState extends State<_TypingDots>
               ),
             );
           }),
-        );
-      },
-    );
-  }
-}
-
-// ==================== 闪烁光标组件 ====================
-
-class _BlinkingCursor extends StatefulWidget {
-  const _BlinkingCursor();
-
-  @override
-  State<_BlinkingCursor> createState() => _BlinkingCursorState();
-}
-
-class _BlinkingCursorState extends State<_BlinkingCursor>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _controller,
-      child: Container(
-        width: 8,
-        height: 18,
-        margin: const EdgeInsets.only(left: 2),
-        decoration: BoxDecoration(
-          color: AppColors.brandPink.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(1),
-        ),
-      ),
-    );
-  }
-}
-
-// ==================== 消息气泡动画包装器 ====================
-
-class _MessageBubbleWrapper extends StatefulWidget {
-  final Widget child;
-  final bool isNew;
-
-  const _MessageBubbleWrapper({required this.child, this.isNew = false});
-
-  @override
-  State<_MessageBubbleWrapper> createState() => _MessageBubbleWrapperState();
-}
-
-class _MessageBubbleWrapperState extends State<_MessageBubbleWrapper>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _opacity;
-  late final Animation<Offset> _offset;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 350),
-      vsync: this,
-    );
-
-    _opacity = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    );
-
-    _offset = Tween<Offset>(
-      begin: const Offset(0, 0.25),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
-
-    if (widget.isNew) {
-      _controller.forward();
-    } else {
-      _controller.value = 1.0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!widget.isNew) return widget.child;
-
-    return FadeTransition(
-      opacity: _opacity,
-      child: SlideTransition(
-        position: _offset,
-        child: widget.child,
-      ),
-    );
-  }
-}
-
-// ==================== TTS 播放脉冲图标 ====================
-
-class _PulsingIcon extends StatefulWidget {
-  final IconData icon;
-  final Color color;
-  final double size;
-
-  const _PulsingIcon({
-    required this.icon,
-    required this.color,
-    this.size = 18,
-  });
-
-  @override
-  State<_PulsingIcon> createState() => _PulsingIconState();
-}
-
-class _PulsingIconState extends State<_PulsingIcon>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    // 持续前向循环动画来模拟声波向外扩散的效果
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 900),
-      vsync: this,
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final val = _controller.value;
-        
-        // 随时间推移循环切换图标，营造出“声波一级级往外扩”的动画感觉
-        IconData currentIcon;
-        if (val < 0.33) {
-          currentIcon = Icons.volume_mute_rounded; // 仅喇叭主体
-        } else if (val < 0.66) {
-          currentIcon = Icons.volume_down_rounded; // 喇叭 + 一级声波
-        } else {
-          currentIcon = Icons.volume_up_rounded;   // 喇叭 + 二级声波
-        }
-
-        // 呼吸放大缩小的扩音动效：在动画正中间（0.5）达到最大，随后收回
-        final scale = 0.92 + 0.16 * (val < 0.5 ? val * 2 : (1.0 - val) * 2);
-
-        return Transform.scale(
-          scale: scale,
-          child: Icon(
-            currentIcon,
-            color: widget.color,
-            size: widget.size,
-          ),
         );
       },
     );
