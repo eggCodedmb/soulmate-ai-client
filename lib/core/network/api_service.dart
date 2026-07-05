@@ -16,6 +16,30 @@ import '../../shared/models/subscription_status.dart';
 import '../../shared/models/reminder.dart';
 import 'api_client.dart';
 
+// Import module mixins
+import 'modules/auth_api.dart';
+import 'modules/user_api.dart';
+import 'modules/companion_api.dart';
+import 'modules/chat_api.dart';
+import 'modules/memory_api.dart';
+import 'modules/subscription_api.dart';
+import 'modules/payment_api.dart';
+import 'modules/asr_api.dart';
+import 'modules/file_api.dart';
+import 'modules/reminder_api.dart';
+
+// Export module mixins so any file importing api_service.dart also sees the mixins
+export 'modules/auth_api.dart';
+export 'modules/user_api.dart';
+export 'modules/companion_api.dart';
+export 'modules/chat_api.dart';
+export 'modules/memory_api.dart';
+export 'modules/subscription_api.dart';
+export 'modules/payment_api.dart';
+export 'modules/asr_api.dart';
+export 'modules/file_api.dart';
+export 'modules/reminder_api.dart';
+
 /// API 异常
 class ApiException implements Exception {
   final int code;
@@ -36,471 +60,26 @@ dynamic _unwrap(Response<dynamic> response) {
 }
 
 /// SoulMate AI API服务
-class ApiService {
+class ApiService with
+    AuthMixin,
+    UserMixin,
+    CompanionMixin,
+    ChatMixin,
+    MemoryMixin,
+    SubscriptionMixin,
+    PaymentMixin,
+    AsrMixin,
+    FileMixin,
+    ReminderMixin {
   final Dio _dio;
 
   ApiService(this._dio);
 
-  // ==================== 认证模块 ====================
+  /// 暴露 dio 给 Mixins 使用
+  Dio get dio => _dio;
 
-  /// 发送验证码
-  Future<void> sendVerifyCode(Map<String, String> body) async {
-    final response = await _dio.post('/api/auth/send-code', data: body);
-    _unwrap(response); // 校验 code
-  }
-
-  /// 邮箱验证码登录
-  Future<LoginResponse> login(LoginRequest request) async {
-    final response = await _dio.post('/api/auth/login', data: request.toJson());
-    return LoginResponse.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 游客登录
-  Future<LoginResponse> guestLogin() async {
-    final response = await _dio.post('/api/auth/guest');
-    return LoginResponse.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  // ==================== 用户模块 ====================
-
-  /// 获取用户信息
-  Future<User> getUserInfo() async {
-    final response = await _dio.get('/api/user/info');
-    return User.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 更新用户信息
-  Future<void> updateUserInfo(User user) async {
-    final response = await _dio.put('/api/user/info', data: user.toJson());
-    _unwrap(response);
-  }
-
-  /// 更新用户头像
-  Future<void> updateAvatar(String? avatarUrl) async {
-    final response = await _dio.put(
-      '/api/user/avatar',
-      data: {'avatarUrl': avatarUrl},
-    );
-    _unwrap(response);
-  }
-
-  /// 获取用户资料
-  Future<UserProfile> getUserProfile() async {
-    final response = await _dio.get('/api/user/profile');
-    return UserProfile.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 更新用户资料
-  Future<void> updateUserProfile(UserProfile profile) async {
-    final response = await _dio.put('/api/user/profile', data: profile.toJson());
-    _unwrap(response);
-  }
-
-  /// 获取用户设置
-  Future<UserSettings> getUserSettings() async {
-    final response = await _dio.get('/api/user/settings');
-    return UserSettings.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 更新用户设置
-  Future<void> updateUserSettings(UserSettings settings) async {
-    final response = await _dio.put('/api/user/settings', data: settings.toJson());
-    _unwrap(response);
-  }
-
-  // ==================== AI伴侣模块 ====================
-
-  /// 创建伴侣
-  Future<Companion> createCompanion(CreateCompanionRequest request) async {
-    final response = await _dio.post('/api/companion', data: request.toJson());
-    return Companion.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 获取伴侣列表
-  Future<List<Companion>> getCompanionList() async {
-    final response = await _dio.get('/api/companion/list');
-    final data = _unwrap(response) as List<dynamic>;
-    return data
-        .map((e) => Companion.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  /// 获取伴侣详情
-  Future<Companion> getCompanion(int id) async {
-    final response = await _dio.get('/api/companion/$id');
-    return Companion.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 更新伴侣
-  Future<void> updateCompanion(int id, Companion companion) async {
-    final response = await _dio.put('/api/companion/$id', data: companion.toJson());
-    _unwrap(response);
-  }
-
-  /// 更新伴侣头像
-  Future<void> updateCompanionAvatar(int id, String? avatarUrl) async {
-    final response = await _dio.put(
-      '/api/companion/$id/avatar',
-      data: {'avatarUrl': avatarUrl},
-    );
-    _unwrap(response);
-  }
-
-  /// 删除伴侣
-  Future<void> deleteCompanion(int id) async {
-    final response = await _dio.delete('/api/companion/$id');
-    _unwrap(response);
-  }
-
-  /// 删除单条消息
-  Future<void> deleteMessage(int messageId) async {
-    final response = await _dio.delete('/api/message/$messageId');
-    _unwrap(response);
-  }
-
-  // ==================== 对话与聊天模块 ====================
-
-  /// 创建或获取对话
-  Future<Conversation> createConversation(int companionId) async {
-    final response = await _dio.post(
-      '/api/conversation',
-      queryParameters: {'companionId': companionId},
-    );
-    return Conversation.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 获取对话列表
-  Future<List<Conversation>> getConversationList() async {
-    final response = await _dio.get('/api/conversation/list');
-    final data = _unwrap(response) as List<dynamic>;
-    return data
-        .map((e) => Conversation.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  /// 获取对话消息（分页）
-  Future<PageResult<Message>> getMessages(
-    int conversationId, {
-    int page = 1,
-    int size = 20,
-  }) async {
-    final response = await _dio.get(
-      '/api/conversation/$conversationId/messages',
-      queryParameters: {'page': page, 'size': size},
-    );
-    final data = _unwrap(response) as Map<String, dynamic>;
-    return PageResult.fromJson(data, Message.fromJson);
-  }
-
-  /// 发送消息（非流式）
-  Future<Message> sendMessage(SendMessageRequest request) async {
-    final response = await _dio.post('/api/chat/send', data: request.toJson());
-    return Message.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 发送消息（SSE流式）
-  ///
-  /// 返回 Stream<ChatResponse>，逐 chunk 推送 AI 回复。
-  /// 当 ChatResponse.done == true 时流结束。
-  Stream<ChatResponse> streamChat(
-    SendMessageRequest request, {
-    CancelToken? cancelToken,
-  }) {
-    final controller = StreamController<ChatResponse>();
-
-    () async {
-      try {
-        final response = await _dio.post<ResponseBody>(
-          '/api/chat/stream',
-          data: request.toJson(),
-          options: Options(
-            responseType: ResponseType.stream,
-            receiveTimeout: const Duration(seconds: 120),
-            headers: {'Accept': 'text/event-stream'},
-          ),
-          cancelToken: cancelToken,
-        );
-
-        final stream = response.data!.stream;
-
-        // 使用 Utf8Decoder 和 LineSplitter 自动处理字节合并与按行切分
-        // 这样可以解决中文乱码问题，并且让流处理更及时
-        final lineStream = stream
-            .cast<List<int>>() // 显式转换类型以匹配 Utf8Decoder
-            .transform(utf8.decoder)
-            .transform(const LineSplitter());
-
-        int chunkCount = 0;
-        StringBuffer rawBuffer = StringBuffer();
-
-        await for (final line in lineStream) {
-          final trimmedLine = line.trim();
-          if (trimmedLine.isEmpty) continue;
-
-          // 支持标准 SSE 格式 (data: {...}) 和纯 JSON 格式 ({...})
-          String? jsonStr;
-          if (trimmedLine.startsWith('data:')) {
-            jsonStr = trimmedLine.substring(5).trim();
-          } else if (trimmedLine.startsWith('{') && trimmedLine.endsWith('}')) {
-            // 兼容纯 JSON 行（非标准 SSE 格式）
-            jsonStr = trimmedLine;
-          }
-
-          if (jsonStr == null || jsonStr.isEmpty) continue;
-          if (jsonStr == '[DONE]') break;
-
-          try {
-            final jsonMap = json.decode(jsonStr) as Map<String, dynamic>;
-            final chatResponse = ChatResponse.fromJson(jsonMap);
-            chunkCount++;
-            if (chatResponse.content != null) {
-              rawBuffer.write(chatResponse.content);
-            }
-            debugPrint('SSE chunk #$chunkCount: content="${chatResponse.content}", done=${chatResponse.done}, totalLen=${rawBuffer.length}');
-            controller.add(chatResponse);
-
-            if (chatResponse.done) {
-              debugPrint('SSE流完成: 共收到 $chunkCount 个chunk, 总长度 ${rawBuffer.length}');
-              if (!controller.isClosed) await controller.close();
-              return;
-            }
-          } catch (e) {
-            debugPrint('SSE JSON解析失败: $jsonStr, error: $e');
-          }
-        }
-
-        debugPrint('SSE流结束(无done标记): 共收到 $chunkCount 个chunk, 总长度 ${rawBuffer.length}');
-        // 流正常结束但没收到 done=true
-        if (!controller.isClosed) {
-          await controller.close();
-        }
-      } on DioException catch (e) {
-        if (e.type == DioExceptionType.cancel) {
-          debugPrint('SSE流被取消');
-        } else {
-          debugPrint('SSE流异常: ${e.type} ${e.message}');
-          controller.add(ChatResponse(
-            error: '网络异常，请稍后重试',
-            done: true,
-          ));
-        }
-        if (!controller.isClosed) {
-          await controller.close();
-        }
-      } catch (e) {
-        debugPrint('SSE流未知异常: $e');
-        controller.add(ChatResponse(
-          error: 'AI服务暂时不可用',
-          done: true,
-        ));
-        if (!controller.isClosed) {
-          await controller.close();
-        }
-      }
-    }();
-
-    return controller.stream;
-  }
-
-  // ==================== 记忆模块 ====================
-
-  /// 获取记忆列表
-  Future<List<Memory>> getMemoryList({
-    int? companionId,
-    String? category,
-  }) async {
-    final queryParams = <String, dynamic>{};
-    if (companionId != null) queryParams['companionId'] = companionId;
-    if (category != null) queryParams['category'] = category;
-
-    final response = await _dio.get(
-      '/api/memory/list',
-      queryParameters: queryParams,
-    );
-    final data = _unwrap(response) as List<dynamic>;
-    return data
-        .map((e) => Memory.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  /// 获取记忆统计数据
-  Future<MemoryStats> getMemoryStats({int? companionId}) async {
-    final queryParams = <String, dynamic>{};
-    if (companionId != null) queryParams['companionId'] = companionId;
-
-    final response = await _dio.get(
-      '/api/memory/stats',
-      queryParameters: queryParams,
-    );
-    final data = _unwrap(response) as Map<String, dynamic>;
-    return MemoryStats.fromJson(data);
-  }
-
-  /// 更新记忆
-  Future<void> updateMemory(int id, Memory memory) async {
-    final response = await _dio.put('/api/memory/$id', data: memory.toJson());
-    _unwrap(response);
-  }
-
-  /// 删除记忆
-  Future<void> deleteMemory(int id) async {
-    final response = await _dio.delete('/api/memory/$id');
-    _unwrap(response);
-  }
-
-  // ==================== 订阅模块 ====================
-
-  /// 获取套餐列表
-  Future<List<SubscriptionPlan>> getSubscriptionPlans() async {
-    final response = await _dio.get('/api/subscription/plans');
-    final data = _unwrap(response) as List<dynamic>;
-    return data
-        .map((e) => SubscriptionPlan.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-  /// 获取当前订阅
-  Future<UserSubscription?> getCurrentSubscription() async {
-    final response = await _dio.get('/api/subscription/current');
-    final data = _unwrap(response);
-    if (data == null) return null;
-    return UserSubscription.fromJson(data as Map<String, dynamic>);
-  }
-
-/// 获取用户当前额度状态
-Future<SubscriptionStatus> getSubscriptionStatus() async {
-  final response = await _dio.get('/api/subscription/status');
-  return SubscriptionStatus.fromJson(_unwrap(response) as Map<String, dynamic>);
-}
-
-// --- 提醒管理 ---
-  // ==================== 支付模块 ====================
-
-  /// 创建支付订单
-  ///
-  /// [paymentChannel] 支付渠道: 'alipay'(支付宝) / 'wechat'(微信) / 'unionpay'(云闪付)
-  Future<CreatePaymentResponse> createPayment(
-    int planId, {
-    String paymentChannel = 'alipay',
-  }) async {
-    final response = await _dio.post(
-      '/api/alipay/create',
-      data: {'planId': planId, 'paymentChannel': paymentChannel},
-    );
-    return CreatePaymentResponse.fromJson(
-      _unwrap(response) as Map<String, dynamic>,
-    );
-  }
-
-  /// 查询支付订单状态
-  Future<PaymentOrder> getPaymentStatus(String orderNo) async {
-    final response = await _dio.get(
-      '/api/alipay/status',
-      queryParameters: {'orderNo': orderNo},
-    );
-    return PaymentOrder.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  // ==================== ASR 语音识别模块 ====================
-
-  /// 语音转文字
-  ///
-  /// 上传音频文件到 ASR 服务，返回识别出的文字。
-  /// 支持格式：WAV, MP3, M4A, WEBM, OGG, FLAC（最大 25MB）
-  Future<String> transcribeAudio(String audioFilePath) async {
-    final formData = FormData.fromMap({
-      'audio': await MultipartFile.fromFile(audioFilePath),
-    });
-    final response = await _dio.post('/api/asr/transcribe', data: formData);
-    final data = _unwrap(response);
-    return data as String? ?? '';
-  }
-
-  // ==================== 文件上传模块 ====================
-
-  /// 单文件上传
-  Future<UploadResult> uploadFile(String filePath) async {
-    final formData = FormData.fromMap({
-      'file': await MultipartFile.fromFile(filePath),
-    });
-    final response = await _dio.post('/api/file/upload', data: formData);
-    return UploadResult.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 删除文件
-  Future<void> deleteFile(String filePath) async {
-    final response = await _dio.delete(
-      '/api/file/delete',
-      queryParameters: {'filePath': filePath},
-    );
-    _unwrap(response);
-  }
-
-  /// 获取定时提醒列表
-  Future<List<Reminder>> getReminderList() async {
-    final response = await _dio.get('/api/reminders/list');
-    final data = _unwrap(response) as List<dynamic>;
-    return data
-        .map((e) => Reminder.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  /// 获取定时提醒详情
-  Future<Reminder> getReminderDetail(int id) async {
-    final response = await _dio.get('/api/reminders/$id');
-    return Reminder.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 创建定时提醒
-  Future<Reminder> createReminder({
-    required int companionId,
-    required String reminderTime,
-    required String textTemplate,
-    required String type,
-    String repeatDays = '',
-    int enabled = 1,
-  }) async {
-    final response = await _dio.post(
-      '/api/reminders',
-      data: {
-        'companionId': companionId,
-        'reminderTime': reminderTime,
-        'textTemplate': textTemplate,
-        'type': type,
-        'repeatDays': repeatDays,
-        'enabled': enabled,
-      },
-    );
-    return Reminder.fromJson(_unwrap(response) as Map<String, dynamic>);
-  }
-
-  /// 更新定时提醒
-  Future<void> updateReminder(int id, {
-    int? companionId,
-    String? reminderTime,
-    String? textTemplate,
-    String? type,
-    String? repeatDays,
-    int? enabled,
-  }) async {
-    final response = await _dio.put(
-      '/api/reminders/$id',
-      data: {
-        if (companionId != null) 'companionId': companionId,
-        if (reminderTime != null) 'reminderTime': reminderTime,
-        if (textTemplate != null) 'textTemplate': textTemplate,
-        if (type != null) 'type': type,
-        if (repeatDays != null) 'repeatDays': repeatDays,
-        if (enabled != null) 'enabled': enabled,
-      },
-    );
-    _unwrap(response);
-  }
-
-  /// 删除定时提醒
-  Future<void> deleteReminder(int id) async {
-    final response = await _dio.delete('/api/reminders/$id');
-    _unwrap(response);
-  }
+  /// 暴露 unwrap 给 Mixins 使用
+  dynamic unwrap(Response<dynamic> response) => _unwrap(response);
 }
 
 /// API服务Provider（使用Riverpod）

@@ -7,7 +7,7 @@ class AppShadows {
     final isLight = Theme.of(context).brightness == Brightness.light;
     return [
       BoxShadow(
-        color: Colors.black.withOpacity(isLight ? 0.05 : 0.2),
+        color: Colors.black.withValues(alpha: isLight ? 0.05 : 0.2),
         blurRadius: 8,
         offset: const Offset(0, 2),
       ),
@@ -19,7 +19,7 @@ class AppShadows {
     final isLight = Theme.of(context).brightness == Brightness.light;
     return [
       BoxShadow(
-        color: Colors.black.withOpacity(isLight ? 0.1 : 0.3),
+        color: Colors.black.withValues(alpha: isLight ? 0.1 : 0.3),
         blurRadius: 12,
         offset: const Offset(0, 4),
       ),
@@ -31,7 +31,7 @@ class AppShadows {
     final isLight = Theme.of(context).brightness == Brightness.light;
     return [
       BoxShadow(
-        color: Colors.black.withOpacity(isLight ? 0.15 : 0.4),
+        color: Colors.black.withValues(alpha: isLight ? 0.15 : 0.4),
         blurRadius: 16,
         offset: const Offset(0, 8),
       ),

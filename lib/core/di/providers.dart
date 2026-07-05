@@ -37,3 +37,13 @@ final currentPartnerIdProvider = StateProvider<String?>((ref) {
 final isLoggedInProvider = StateProvider<bool>((ref) {
   return false;
 });
+
+/// 消息通知状态 Provider
+final messageNotifyProvider = StateProvider<bool>((ref) {
+  return LocalStorage.messageNotify;
+});
+
+/// 主动关心状态 Provider
+final proactiveCareProvider = StateProvider<bool>((ref) {
+  return LocalStorage.proactiveCare;
+});
