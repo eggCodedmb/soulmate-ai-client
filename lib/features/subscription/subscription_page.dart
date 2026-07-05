@@ -1,14 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/network/alipay_service.dart';
 import '../../core/network/api_service.dart';
 import '../../shared/models/subscription.dart';
 import '../../shared/models/subscription_status.dart';
 import 'payment_method_page.dart';
 import 'payment_webview_page.dart';
 import 'providers/subscription_providers.dart';
+import 'subscription_terms_page.dart';
 
 /// 订阅会员页
 class SubscriptionPage extends ConsumerStatefulWidget {
@@ -925,7 +926,11 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
           const SizedBox(height: 16),
           GestureDetector(
             onTap: () {
-              // TODO: 跳转订阅条款页面
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const SubscriptionTermsPage(),
+                ),
+              );
             },
             child: Text(
               '《订阅服务条款》',
@@ -970,12 +975,6 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
     if (plan.priorityResponse == 1) benefits.add('优先响应');
 
     return benefits;
-  }
-
-  /// 根据 planId 推断套餐名
-  String _getPlanNameById(int planId) {
-    const names = {1: '免费版', 2: '基础版', 3: '高级版', 4: '尊享版'};
-    return names[planId] ?? '会员';
   }
 
   /// 发起支付
@@ -1034,7 +1033,25 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
         return;
       }
 
-      // 打开支付宝 WebView
+      // 检测支付方式：优先APP支付，降级为网页支付
+      final alipayService = AlipayService();
+      final payMode = await alipayService.getRecommendedPayMode();
+
+      if (payMode == AlipayPayMode.app) {
+        // 尝试唤起支付宝APP支付
+        final launched = await alipayService.launchAlipayApp(payment.payForm);
+        if (launched) {
+          // 成功唤起支付宝APP，轮询订单状态
+          if (context.mounted) {
+            await _pollPaymentResult(context, payment.orderNo);
+          }
+          return;
+        }
+        // 唤起失败，降级为网页支付
+        debugPrint('唤起支付宝APP失败，降级为网页支付');
+      }
+
+      // 打开支付宝 WebView（降级方案或未安装APP时）
       final orderNo = await Navigator.of(context).push<String>(
         MaterialPageRoute(
           builder: (_) => PaymentWebViewPage(
@@ -1048,11 +1065,11 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
       if (orderNo != null && context.mounted) {
         await _pollPaymentResult(context, orderNo);
       }
-    } on Exception catch (e) {
+    } on ApiException catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('支付创建失败: $e'),
+            content: Text(_getPaymentErrorMessage(e)),
             backgroundColor: Colors.red.withOpacity(0.9),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -1061,8 +1078,40 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
           ),
         );
       }
+    } on Exception catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('网络异常，请检查网络后重试'),
+            backgroundColor: Colors.red.withOpacity(0.9),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+      debugPrint('支付创建异常: $e');
     } finally {
       if (mounted) setState(() => _isPaying = false);
+    }
+  }
+
+  /// 获取支付错误的友好提示
+  String _getPaymentErrorMessage(ApiException e) {
+    switch (e.code) {
+      case 1001:
+        return '套餐不存在或已下架';
+      case 1002:
+        return '您已订阅该套餐，无需重复购买';
+      case 1003:
+        return '订单创建失败，请稍后重试';
+      case 1004:
+        return '支付渠道不可用，请选择其他支付方式';
+      case 1005:
+        return '支付金额异常，请联系客服';
+      default:
+        return '支付创建失败: ${e.message}';
     }
   }
 
@@ -1133,6 +1182,9 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          // 支付方式提示
+          _buildPayModeHint(context, isDark),
           const SizedBox(height: 24),
           // 按钮
           Row(
@@ -1196,13 +1248,66 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
     );
   }
 
+  /// 支付方式提示
+  Widget _buildPayModeHint(BuildContext context, bool isDark) {
+    return FutureBuilder<bool>(
+      future: AlipayService().isAlipayInstalled(),
+      builder: (context, snapshot) {
+        final isInstalled = snapshot.data ?? false;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.05)
+                : Colors.black.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isInstalled ? Icons.check_circle_outline : Icons.info_outline,
+                color: isInstalled
+                    ? const Color(0xFF4CAF50)
+                    : Colors.orange.withOpacity(0.8),
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isInstalled
+                      ? '已检测到支付宝APP，将优先使用APP支付'
+                      : '未检测到支付宝APP，将使用网页支付',
+                  style: TextStyle(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.6)
+                        : Colors.black.withOpacity(0.5),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   /// 轮询支付结果
+  ///
+  /// 使用指数退避策略：初始间隔2秒，最长间隔10秒，最多轮询30次（约2分钟）
   Future<void> _pollPaymentResult(
     BuildContext context,
     String orderNo,
   ) async {
+    const maxAttempts = 30;
+    const initialInterval = Duration(seconds: 2);
+    const maxInterval = Duration(seconds: 10);
+    const timeout = Duration(minutes: 2);
+
     final api = ref.read(apiServiceProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final stopwatch = Stopwatch()..start();
 
     // 显示加载弹窗
     if (!context.mounted) return;
@@ -1240,26 +1345,56 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
                   fontSize: 16,
                 ),
               ),
+              const SizedBox(height: 8),
+              Text(
+                '请勿关闭页面',
+                style: TextStyle(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.4)
+                      : Colors.black.withOpacity(0.3),
+                  fontSize: 12,
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
 
-    // 最多轮询 15 次，每次间隔 3 秒，总计约 45 秒
+    // 使用指数退避策略轮询
     var paid = false;
-    for (var i = 0; i < 15; i++) {
-      await Future<void>.delayed(const Duration(seconds: 3));
+    var attempts = 0;
+    var currentInterval = initialInterval;
+
+    while (attempts < maxAttempts && stopwatch.elapsed < timeout) {
+      await Future<void>.delayed(currentInterval);
+      attempts++;
+
       try {
         final order = await api.getPaymentStatus(orderNo);
         if (order.isPaid) {
           paid = true;
           break;
         }
-      } on Exception catch (_) {
-        // 查询失败继续重试
+        // 支付失败或已关闭
+        if (order.paymentStatus == 2 || order.paymentStatus == 3) {
+          break;
+        }
+      } on Exception catch (e) {
+        debugPrint('轮询支付状态失败 (第${attempts}次): $e');
+        // 查询失败继续重试，但增加间隔
       }
+
+      // 指数退避，最大间隔10秒
+      currentInterval = Duration(
+        seconds: (currentInterval.inSeconds * 1.5).round().clamp(
+              initialInterval.inSeconds,
+              maxInterval.inSeconds,
+            ),
+      );
     }
+
+    stopwatch.stop();
 
     // 关闭加载弹窗（使用 rootNavigator 确保关闭正确的对话框）
     if (context.mounted) {
@@ -1269,23 +1404,83 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
     // 刷新订阅数据
     await ref.read(subscriptionPlansProvider.notifier).refresh();
     await ref.read(currentSubscriptionProvider.notifier).refresh();
+    await ref.read(subscriptionStatusProvider.notifier).refresh();
 
     if (!context.mounted) return;
 
     if (paid) {
       _showSuccessDialog(context);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('未检测到支付成功，请稍后查看或重试'),
-          backgroundColor: Colors.orange.withOpacity(0.9),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+      _showPaymentResultDialog(context, false);
+    }
+  }
+
+  /// 显示支付结果对话框
+  void _showPaymentResultDialog(BuildContext context, bool success) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                success ? Icons.check_circle : Icons.info_outline,
+                color: success ? const Color(0xFF4CAF50) : Colors.orange,
+                size: 48,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                success ? '支付成功' : '支付未完成',
+                style: TextStyle(
+                  color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                success
+                    ? '会员已生效，尽情享受吧！'
+                    : '如果您已完成支付，系统可能需要一些时间处理。\n您可以在"我的订阅"中查看最新状态。',
+                style: TextStyle(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.6)
+                      : Colors.black.withOpacity(0.5),
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.brandPink,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('我知道了'),
+                ),
+              ),
+            ],
           ),
         ),
-      );
-    }
+      ),
+    );
   }
 
   /// 支付成功弹窗

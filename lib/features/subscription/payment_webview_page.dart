@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../core/constants/app_colors.dart';
 
 /// 支付宝支付 WebView 页面
 ///
@@ -25,6 +27,7 @@ class PaymentWebViewPage extends StatefulWidget {
 class _PaymentWebViewPageState extends State<PaymentWebViewPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -38,21 +41,42 @@ class _PaymentWebViewPageState extends State<PaymentWebViewPage> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (_) {
-            if (mounted) setState(() => _isLoading = true);
+            if (mounted) setState(() {
+              _isLoading = true;
+              _errorMessage = null;
+            });
           },
           onPageFinished: (_) {
             if (mounted) setState(() => _isLoading = false);
           },
-          onNavigationRequest: (request) {
+          onNavigationRequest: (request) async {
+            final url = request.url;
+
             // 拦截 alipays:// 协议跳转（唤起支付宝 App）
-            if (request.url.startsWith('alipays://')) {
-              // 尝试跳转支付宝 App
-              return NavigationDecision.navigate;
+            if (url.startsWith('alipays://')) {
+              final uri = Uri.parse(url);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+              return NavigationDecision.prevent;
             }
+
+            // 拦截 wechat:// 协议跳转（唤起微信 App）
+            if (url.startsWith('weixin://') || url.startsWith('wechat://')) {
+              final uri = Uri.parse(url);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+              return NavigationDecision.prevent;
+            }
+
             return NavigationDecision.navigate;
           },
         ),
       );
+
+    // 对 payForm 进行安全过滤，防止 XSS 注入
+    final safePayForm = _sanitizeHtml(widget.payForm);
 
     // 构建包含 payForm 的 HTML 并加载
     final html = '''
@@ -60,22 +84,25 @@ class _PaymentWebViewPageState extends State<PaymentWebViewPage> {
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>支付</title>
   <style>
-    body { margin: 0; padding: 20px; font-family: sans-serif; }
+    body { margin: 0; padding: 20px; font-family: -apple-system, sans-serif; }
     .loading { text-align: center; padding: 40px; color: #666; }
+    .error { text-align: center; padding: 40px; color: #e53935; }
   </style>
 </head>
 <body>
-  <div class="loading">正在跳转支付宝...</div>
-  ${widget.payForm}
+  <div class="loading">正在跳转支付...</div>
+  $safePayForm
   <script>
-    // 自动提交表单
-    var form = document.querySelector('form');
-    if (form) {
-      form.submit();
-    }
+    // 自动提交表单，延迟确保DOM加载完成
+    setTimeout(function() {
+      var form = document.querySelector('form');
+      if (form) {
+        form.submit();
+      }
+    }, 100);
   </script>
 </body>
 </html>
@@ -84,26 +111,114 @@ class _PaymentWebViewPageState extends State<PaymentWebViewPage> {
     _controller.loadHtmlString(html);
   }
 
+  /// 简单的 HTML 安全过滤，移除危险的 script 标签和事件处理器
+  String _sanitizeHtml(String html) {
+    if (html.isEmpty) return '';
+
+    var sanitized = html;
+
+    // 移除 <script> 标签及其内容（保留表单提交脚本）
+    // 只移除包含危险内容的 script 标签
+    final dangerousScriptPattern = RegExp(
+      r'<script[^>]*>(?:(?!form\.submit|setTimeout)[\s\S])*?</script>',
+      caseSensitive: false,
+    );
+    sanitized = sanitized.replaceAll(dangerousScriptPattern, '');
+
+    // 移除内联事件处理器 (onclick, onload, onerror 等)
+    final eventPattern = RegExp(
+      r'''\bon\w+\s*=\s*(?:"[^"]*"|'[^']*')''',
+      caseSensitive: false,
+    );
+    sanitized = sanitized.replaceAll(eventPattern, '');
+
+    return sanitized;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('支付'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () {
-            // 关闭支付页面，返回订单号供上层轮询
-            Navigator.of(context).pop(widget.orderNo);
-          },
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          _showCancelConfirmDialog();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('支付'),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: _showCancelConfirmDialog,
+          ),
+        ),
+        body: Stack(
+          children: [
+            WebViewWidget(controller: _controller),
+            if (_isLoading)
+              const Center(
+                child: CircularProgressIndicator(
+                  color: AppColors.brandPink,
+                ),
+              ),
+            if (_errorMessage != null)
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.red,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Colors.red),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _errorMessage = null;
+                          _isLoading = true;
+                        });
+                        _initWebView();
+                      },
+                      child: const Text('重试'),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
-      body: Stack(
-        children: [
-          WebViewWidget(controller: _controller),
-          if (_isLoading)
-            const Center(
-              child: CircularProgressIndicator(),
+    );
+  }
+
+  void _showCancelConfirmDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('取消支付？'),
+        content: const Text('确定要取消当前支付吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('继续支付'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              // 取消支付时返回 null，不触发轮询
+              Navigator.of(context).pop<String?>(null);
+            },
+            child: const Text(
+              '取消支付',
+              style: TextStyle(color: Colors.red),
             ),
+          ),
         ],
       ),
     );

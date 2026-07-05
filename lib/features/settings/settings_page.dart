@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/di/providers.dart';
+import '../../core/network/api_service.dart';
 import '../../core/network/tts_api_client.dart';
 import '../../core/storage/local_storage.dart';
 import '../../core/storage/secure_storage.dart';
+import '../../shared/models/user.dart';
 
 /// ASR 提供商选项
 const _asrProviders = [
@@ -60,6 +62,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   String _themeMode = LocalStorage.themeMode;
   bool _messageNotify = LocalStorage.messageNotify;
   bool _proactiveCare = LocalStorage.proactiveCare;
+  User? _userInfo;
+  bool _isLoadingUser = true;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
@@ -75,6 +79,24 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
     _fadeController.forward();
+    _loadUserInfo();
+  }
+
+  Future<void> _loadUserInfo() async {
+    try {
+      final api = ref.read(apiServiceProvider);
+      final user = await api.getUserInfo();
+      if (mounted) {
+        setState(() {
+          _userInfo = user;
+          _isLoadingUser = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingUser = false);
+      }
+    }
   }
 
   @override
@@ -128,7 +150,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           icon: Icons.email_outlined,
                           iconColor: const Color(0xFF9C27B0),
                           title: '绑定邮箱',
-                          subtitle: '已绑定: user@example.com',
+                          subtitle: _isLoadingUser
+                              ? '加载中...'
+                              : (_userInfo?.email.isNotEmpty == true
+                                  ? '已绑定: ${_userInfo!.email}'
+                                  : '未绑定邮箱'),
                           isDark: isDark,
                           onTap: () {
                             // TODO: 绑定邮箱
@@ -342,7 +368,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           iconColor: const Color(0xFF4CAF50),
                           title: '服务器地址',
                           subtitle: LocalStorage.serverType == 'online'
-                              ? '线上服务 (https://hupokeji.top)'
+                              ? '线上服务 (http://39.108.137.45)'
                               : '本地服务 (${LocalStorage.localServerUrl})',
                           isDark: isDark,
                           onTap: () => _showServerConfigDialog(context, isDark),
@@ -770,7 +796,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 _buildServerTypeOption(
                   context,
                   title: '线上服务',
-                  subtitle: 'https://hupokeji.top',
+                  subtitle: 'http://39.108.137.45',
                   isSelected: selectedType == 'online',
                   isDark: isDark,
                   onTap: () {

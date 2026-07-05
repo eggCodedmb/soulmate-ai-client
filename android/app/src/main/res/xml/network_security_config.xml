@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 允许 HTTP 明文请求（开发环境） -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">39.108.137.45</domain>
+        <domain includeSubdomains="true">10.2.3.6</domain>
+        <domain includeSubdomains="true">192.168.2.222</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
