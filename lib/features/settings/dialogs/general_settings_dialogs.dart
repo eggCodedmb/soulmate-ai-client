@@ -65,7 +65,7 @@ void showServerConfigDialog(BuildContext context, {required VoidCallback onSaved
               _buildServerTypeOption(
                 context,
                 title: '线上服务',
-                subtitle: 'http://39.108.137.45',
+                subtitle: 'https://hupokeji.top',
                 isSelected: selectedType == 'online',
                 isDark: isDark,
                 onTap: () {

@@ -10,13 +10,7 @@ import '../../core/storage/local_storage.dart';
 import '../../shared/models/tts_config.dart';
 
 /// 播放器状态枚举，保持与 just_audio 相同的名称以兼容调用方
-enum ProcessingState {
-  idle,
-  loading,
-  buffering,
-  ready,
-  completed,
-}
+enum ProcessingState { idle, loading, buffering, ready, completed }
 
 /// TTS 音频服务 - 负责生成、缓存、播放 TTS 音频
 ///
@@ -32,7 +26,7 @@ class TtsAudioService {
   bool _isPlaying = false;
   String? _playingMessageKey;
   ProcessingState _processingState = ProcessingState.idle;
-  
+
   // 自定义顺序播放队列
   final List<String> _playlist = [];
 
@@ -49,14 +43,17 @@ class TtsAudioService {
   bool _whenFinishedFired = false;
 
   TtsAudioService(this._api) {
-    _player.openPlayer().then((_) {
-      debugPrint('[TTS] FlutterSoundPlayer opened successfully');
-      // 启用进度订阅，用于安全回退检测
-      _player.setSubscriptionDuration(const Duration(milliseconds: 200));
-      _progressSubscription = _player.onProgress?.listen(_onProgress);
-    }).catchError((e) {
-      debugPrint('[TTS] Failed to open FlutterSoundPlayer: $e');
-    });
+    _player
+        .openPlayer()
+        .then((_) {
+          debugPrint('[TTS] FlutterSoundPlayer opened successfully');
+          // 启用进度订阅，用于安全回退检测
+          _player.setSubscriptionDuration(const Duration(milliseconds: 200));
+          _progressSubscription = _player.onProgress?.listen(_onProgress);
+        })
+        .catchError((e) {
+          debugPrint('[TTS] Failed to open FlutterSoundPlayer: $e');
+        });
   }
 
   bool get isPlaying => _isPlaying;
@@ -65,11 +62,13 @@ class TtsAudioService {
   ProcessingState get processingState => _processingState;
 
   /// 设置状态变化回调
+  // ignore: use_setters_to_change_properties
   void setOnStateChanged(VoidCallback? callback) {
     _onStateChanged = callback;
   }
 
   /// 动态更新当前播放消息的 key，用于流式临时 key (id=0) 与真实 key (id>0) 的无缝过渡
+  // ignore: use_setters_to_change_properties
   void updatePlayingMessageKey(String newKey) {
     _playingMessageKey = newKey;
   }
@@ -82,7 +81,8 @@ class TtsAudioService {
     // 检查播放器是否真的已经停了（position 不再变化且接近 duration）
     if (disposition.duration.inMilliseconds > 0 &&
         disposition.position.inMilliseconds > 0 &&
-        disposition.position >= disposition.duration - const Duration(milliseconds: 100)) {
+        disposition.position >=
+            disposition.duration - const Duration(milliseconds: 100)) {
       // 启动一个短延时守卫：如果 200ms 内 whenFinished 没触发，手动推进
       _completionGuardTimer?.cancel();
       _completionGuardTimer = Timer(const Duration(milliseconds: 300), () {
@@ -116,7 +116,8 @@ class TtsAudioService {
 
   /// 生成缓存 key（基于内容 + 声音配置的 hash）
   String _cacheKey(String text, TtsConfig config) {
-    final input = '$text|${config.profileId}|${config.language}|${config.engine}';
+    final input =
+        '$text|${config.profileId}|${config.language}|${config.engine}';
     return md5.convert(utf8.encode(input)).toString();
   }
 
@@ -126,6 +127,7 @@ class TtsAudioService {
     final key = _cacheKey(text, config);
     // 同时检查 .wav 和 .mp3 以支持动态检测出的不同音频格式
     final wavFile = File('${dir.path}/$key.wav');
+
     if (await wavFile.exists() && await wavFile.length() > 200) {
       return wavFile.path;
     }
@@ -148,8 +150,15 @@ class TtsAudioService {
       await raf.close();
 
       if (header.length >= 12 &&
-          header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46 && // RIFF
-          header[8] == 0x57 && header[9] == 0x41 && header[10] == 0x56 && header[11] == 0x45) { // WAVE
+          header[0] == 0x52 &&
+          header[1] == 0x49 &&
+          header[2] == 0x46 &&
+          header[3] == 0x46 && // RIFF
+          header[8] == 0x57 &&
+          header[9] == 0x41 &&
+          header[10] == 0x56 &&
+          header[11] == 0x45) {
+        // WAVE
         return true;
       }
     } catch (_) {}
@@ -224,7 +233,7 @@ class TtsAudioService {
       if (_playingMessageKey != null && _playingMessageKey != messageKey) {
         await stop();
       }
-      
+
       _playingMessageKey = messageKey;
 
       // 避免重复添加同一文件
@@ -252,7 +261,7 @@ class TtsAudioService {
       _processingState = ProcessingState.completed;
       // 保留 _playingMessageKey 不清空，让 provider 读取后决定如何处理
       _notifyStateChanged();
-      
+
       // 延迟清空 _playingMessageKey，给 provider 足够时间读取
       Future.microtask(() {
         if (_processingState == ProcessingState.completed && !_isPlaying) {
@@ -264,7 +273,7 @@ class TtsAudioService {
 
     final currentFile = _playlist.first;
     _whenFinishedFired = false;
-    
+
     try {
       final isWav = currentFile.endsWith('.wav');
       await _player.startPlayer(

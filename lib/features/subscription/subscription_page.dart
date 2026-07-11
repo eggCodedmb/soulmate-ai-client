@@ -3,11 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/network/alipay_service.dart';
-import '../../core/network/api_service.dart';
 import '../../shared/models/subscription.dart';
 import '../../shared/models/subscription_status.dart';
 import 'payment_method_page.dart';
-import 'payment_webview_page.dart';
+import 'providers/payment_controller.dart';
 import 'providers/subscription_providers.dart';
 import 'subscription_terms_page.dart';
 
@@ -21,10 +20,10 @@ class SubscriptionPage extends ConsumerStatefulWidget {
 
 class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
     with SingleTickerProviderStateMixin {
-  bool _isPaying = false;
 
   @override
   Widget build(BuildContext context) {
+    final isPaying = ref.watch(paymentControllerProvider);
     final plansAsync = ref.watch(subscriptionPlansProvider);
     final subscriptionAsync = ref.watch(currentSubscriptionProvider);
     final statusAsync = ref.watch(subscriptionStatusProvider);
@@ -55,7 +54,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
                     _buildCurrentStatus(context, statusAsync, isDark),
                     const SizedBox(height: 24),
                     // 区域 2: 套餐选择
-                    _buildPlanSection(context, plansAsync, subscriptionAsync, isDark),
+                    _buildPlanSection(context, plansAsync, subscriptionAsync, isDark, isPaying),
                     const SizedBox(height: 24),
                     // 区域 3: 底部说明
                     _buildBottomNotes(context, isDark),
@@ -484,6 +483,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
     AsyncValue<List<SubscriptionPlan>> plansAsync,
     AsyncValue<UserSubscription?> subscriptionAsync,
     bool isDark,
+    bool isPaying,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -581,6 +581,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
                     isCurrent: isCurrent,
                     isDowngrade: isDowngrade && !isCurrent,
                     isDark: isDark,
+                    isPaying: isPaying,
                   ),
                 );
               }).toList(),
@@ -599,6 +600,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
     bool isCurrent = false,
     bool isDowngrade = false,
     required bool isDark,
+    required bool isPaying,
   }) {
     final benefits = _getPlanBenefits(context, plan);
     final isDisabled = isCurrent || isDowngrade;
@@ -806,9 +808,9 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton(
-                      onPressed: isDisabled || _isPaying
+                      onPressed: isDisabled || isPaying
                           ? null
-                          : () => _startPayment(context, plan),
+                          : () => ref.read(paymentControllerProvider.notifier).startPayment(context, plan),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.transparent,
                         foregroundColor: Colors.white,
@@ -834,7 +836,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
                         ),
                         child: Container(
                           alignment: Alignment.center,
-                          child: _isPaying && !isDisabled
+                          child: isPaying && !isDisabled
                               ? const SizedBox(
                                   width: 24,
                                   height: 24,
@@ -977,143 +979,7 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
     return benefits;
   }
 
-  /// 发起支付
-  Future<void> _startPayment(
-    BuildContext context,
-    SubscriptionPlan plan,
-  ) async {
-    if (_isPaying) return;
 
-    // 确认弹窗
-    final confirmed = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => _buildPaymentConfirmSheet(ctx, plan),
-    );
-
-    if (confirmed != true || !context.mounted) return;
-
-    setState(() => _isPaying = true);
-
-    try {
-      final api = ref.read(apiServiceProvider);
-      final payment = await api.createPayment(plan.id);
-
-      if (!context.mounted) return;
-
-      // 弹出支付方式选择页面
-      final paymentChannel = await Navigator.of(context).push<String>(
-        MaterialPageRoute(
-          builder: (_) => PaymentMethodPage(
-            plan: plan,
-            orderNo: payment.orderNo,
-          ),
-        ),
-      );
-
-      if (paymentChannel == null || !context.mounted) {
-        return;
-      }
-
-      // 目前仅支持支付宝
-      if (paymentChannel != 'alipay') {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('该支付方式暂未开放，敬请期待'),
-              backgroundColor: Colors.orange.withOpacity(0.9),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
-        }
-        return;
-      }
-
-      // 检测支付方式：优先APP支付，降级为网页支付
-      final alipayService = AlipayService();
-      final payMode = await alipayService.getRecommendedPayMode();
-
-      if (payMode == AlipayPayMode.app) {
-        // 尝试唤起支付宝APP支付
-        final launched = await alipayService.launchAlipayApp(payment.payForm);
-        if (launched) {
-          // 成功唤起支付宝APP，轮询订单状态
-          if (context.mounted) {
-            await _pollPaymentResult(context, payment.orderNo);
-          }
-          return;
-        }
-        // 唤起失败，降级为网页支付
-        debugPrint('唤起支付宝APP失败，降级为网页支付');
-      }
-
-      // 打开支付宝 WebView（降级方案或未安装APP时）
-      final orderNo = await Navigator.of(context).push<String>(
-        MaterialPageRoute(
-          builder: (_) => PaymentWebViewPage(
-            payForm: payment.payForm,
-            orderNo: payment.orderNo,
-          ),
-        ),
-      );
-
-      // 用户从支付页面返回，轮询订单状态
-      if (orderNo != null && context.mounted) {
-        await _pollPaymentResult(context, orderNo);
-      }
-    } on ApiException catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_getPaymentErrorMessage(e)),
-            backgroundColor: Colors.red.withOpacity(0.9),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
-    } on Exception catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('网络异常，请检查网络后重试'),
-            backgroundColor: Colors.red.withOpacity(0.9),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
-      debugPrint('支付创建异常: $e');
-    } finally {
-      if (mounted) setState(() => _isPaying = false);
-    }
-  }
-
-  /// 获取支付错误的友好提示
-  String _getPaymentErrorMessage(ApiException e) {
-    switch (e.code) {
-      case 1001:
-        return '套餐不存在或已下架';
-      case 1002:
-        return '您已订阅该套餐，无需重复购买';
-      case 1003:
-        return '订单创建失败，请稍后重试';
-      case 1004:
-        return '支付渠道不可用，请选择其他支付方式';
-      case 1005:
-        return '支付金额异常，请联系客服';
-      default:
-        return '支付创建失败: ${e.message}';
-    }
-  }
 
   /// 支付确认底部弹窗
   Widget _buildPaymentConfirmSheet(BuildContext context, SubscriptionPlan plan) {
@@ -1290,285 +1156,6 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage>
           ),
         );
       },
-    );
-  }
-
-  /// 轮询支付结果
-  ///
-  /// 使用指数退避策略：初始间隔2秒，最长间隔10秒，最多轮询30次（约2分钟）
-  Future<void> _pollPaymentResult(
-    BuildContext context,
-    String orderNo,
-  ) async {
-    const maxAttempts = 30;
-    const initialInterval = Duration(seconds: 2);
-    const maxInterval = Duration(seconds: 10);
-    const timeout = Duration(minutes: 2);
-
-    final api = ref.read(apiServiceProvider);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final stopwatch = Stopwatch()..start();
-
-    // 显示加载弹窗
-    if (!context.mounted) return;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => Center(
-        child: Container(
-          padding: const EdgeInsets.all(32),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(
-                color: isDark ? AppColors.brandPink : Theme.of(context).colorScheme.primary,
-                strokeWidth: 3,
-              ),
-              const SizedBox(height: 20),
-              Text(
-                '正在确认支付...',
-                style: TextStyle(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.7)
-                      : Colors.black.withOpacity(0.6),
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '请勿关闭页面',
-                style: TextStyle(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.4)
-                      : Colors.black.withOpacity(0.3),
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    // 使用指数退避策略轮询
-    var paid = false;
-    var attempts = 0;
-    var currentInterval = initialInterval;
-
-    while (attempts < maxAttempts && stopwatch.elapsed < timeout) {
-      await Future<void>.delayed(currentInterval);
-      attempts++;
-
-      try {
-        final order = await api.getPaymentStatus(orderNo);
-        if (order.isPaid) {
-          paid = true;
-          break;
-        }
-        // 支付失败或已关闭
-        if (order.paymentStatus == 2 || order.paymentStatus == 3) {
-          break;
-        }
-      } on Exception catch (e) {
-        debugPrint('轮询支付状态失败 (第${attempts}次): $e');
-        // 查询失败继续重试，但增加间隔
-      }
-
-      // 指数退避，最大间隔10秒
-      currentInterval = Duration(
-        seconds: (currentInterval.inSeconds * 1.5).round().clamp(
-              initialInterval.inSeconds,
-              maxInterval.inSeconds,
-            ),
-      );
-    }
-
-    stopwatch.stop();
-
-    // 关闭加载弹窗（使用 rootNavigator 确保关闭正确的对话框）
-    if (context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-
-    // 刷新订阅数据
-    await ref.read(subscriptionPlansProvider.notifier).refresh();
-    await ref.read(currentSubscriptionProvider.notifier).refresh();
-    await ref.read(subscriptionStatusProvider.notifier).refresh();
-
-    if (!context.mounted) return;
-
-    if (paid) {
-      _showSuccessDialog(context);
-    } else {
-      _showPaymentResultDialog(context, false);
-    }
-  }
-
-  /// 显示支付结果对话框
-  void _showPaymentResultDialog(BuildContext context, bool success) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    showDialog<void>(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                success ? Icons.check_circle : Icons.info_outline,
-                color: success ? const Color(0xFF4CAF50) : Colors.orange,
-                size: 48,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                success ? '支付成功' : '支付未完成',
-                style: TextStyle(
-                  color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                success
-                    ? '会员已生效，尽情享受吧！'
-                    : '如果您已完成支付，系统可能需要一些时间处理。\n您可以在"我的订阅"中查看最新状态。',
-                style: TextStyle(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.6)
-                      : Colors.black.withOpacity(0.5),
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.brandPink,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text('我知道了'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 支付成功弹窗
-  void _showSuccessDialog(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    showDialog<void>(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(32),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 成功图标
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF4CAF50), Color(0xFF66BB6A)],
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_rounded,
-                  color: Colors.white,
-                  size: 40,
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                '🎉 支付成功',
-                style: TextStyle(
-                  color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '会员已生效，尽情享受吧！',
-                style: TextStyle(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.6)
-                      : Colors.black.withOpacity(0.5),
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.brandPink,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    '好的',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

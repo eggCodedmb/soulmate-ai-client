@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../storage/local_storage.dart';
@@ -8,7 +10,7 @@ import 'interceptors/logging_interceptor.dart';
 /// API客户端配置 - 仅保留主服务器地址
 class ApiClient {
   // 服务器地址
-  static const String primaryBaseUrl = 'http://39.108.137.45';
+  static const String primaryBaseUrl = 'http://192.168.2.240/ai';
   static const String apiPrefix = '/api';
 
   // 超时配置
@@ -42,6 +44,27 @@ class ApiClient {
       AuthInterceptor(_dio),
       if (kDebugMode) LoggingInterceptor(),
     ]);
+
+    // 配置HTTPS证书验证（如果需要自签名证书支持）
+    _configureCertificateVerification();
+  }
+
+  /// 配置证书验证
+  void _configureCertificateVerification() {
+    // 注意：仅在开发环境中使用，生产环境应使用正式证书
+    if (kDebugMode) {
+      // 开发环境：信任所有证书（仅用于调试）
+      // 生产环境应删除此配置，使用正式证书
+      (_dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
+        final client = HttpClient();
+        // 信任所有证书（仅用于开发调试）
+        client.badCertificateCallback = (X509Certificate cert, String host, int port) {
+          print('⚠️ 警告：信任了自签名证书 - $host:$port');
+          return true;
+        };
+        return client;
+      };
+    }
   }
 
   Dio get dio => _dio;

@@ -10,6 +10,7 @@ import 'dialogs/llm_settings_dialogs.dart';
 import 'dialogs/tts_settings_dialogs.dart';
 import 'dialogs/asr_settings_dialogs.dart';
 import 'dialogs/general_settings_dialogs.dart';
+import 'model_download_page.dart';
 
 /// 设置页
 class SettingsPage extends ConsumerStatefulWidget {
@@ -93,6 +94,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
 
   String _asrProviderSubtitle() {
     switch (LocalStorage.asrProviderType) {
+      case 'sherpa_onnx':
+        return 'Sherpa ONNX (本地离线)';
       case 'mimo':
         return 'Xiaomi MiMo (云端)';
       case 'custom':
@@ -321,7 +324,31 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                             onSaved: () => setState(() {}),
                           ),
                         ),
-                        if (LocalStorage.asrProviderType != 'system') ...[
+                        const SettingMenuDivider(),
+                        SettingMenuItem(
+                          icon: Icons.tune_rounded,
+                          iconColor: const Color(0xFF00BCD4),
+                          title: 'VAD 语音检测调优',
+                          subtitle: '微调静音判定、检测阈值与噪声过滤',
+                          onTap: () => showVadSettingsDialog(
+                            context,
+                            onSaved: () => setState(() {}),
+                          ),
+                        ),
+                        const SettingMenuDivider(),
+                        SettingMenuItem(
+                          icon: Icons.download_for_offline_rounded,
+                          iconColor: const Color(0xFFFF9800),
+                          title: '离线模型管理',
+                          subtitle: '下载或部署本地 VAD、ASR 离线大模型',
+                          onTap: () => Navigator.push<void>(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (context) => const ModelDownloadPage(),
+                            ),
+                          ),
+                        ),
+                        if (LocalStorage.asrProviderType != 'system' && LocalStorage.asrProviderType != 'sherpa_onnx') ...[
                           const SettingMenuDivider(),
                           SettingMenuItem(
                             icon: Icons.dns_outlined,
@@ -374,7 +401,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                           iconColor: const Color(0xFF4CAF50),
                           title: '服务器地址',
                           subtitle: LocalStorage.serverType == 'online'
-                              ? '线上服务 (http://39.108.137.45)'
+                              ? '线上服务 (https://hupokeji.top)'
                               : '本地服务 (${LocalStorage.localServerUrl})',
                           onTap: () => showServerConfigDialog(
                             context,

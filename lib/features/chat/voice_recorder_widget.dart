@@ -118,7 +118,11 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
           '${tempDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.wav';
 
       await _recorder.start(
-        const RecordConfig(encoder: AudioEncoder.wav),
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
         path: filePath,
       );
 

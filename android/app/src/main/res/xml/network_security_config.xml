@@ -8,4 +8,22 @@
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">10.0.2.2</domain>
     </domain-config>
+
+    <!-- HTTPS 配置 -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- 如果使用自签名证书，取消注释以下配置 -->
+    <!--
+    <domain-config>
+        <domain includeSubdomains="true">hupokeji.top</domain>
+        <trust-anchors>
+            <certificates src="@raw/certificate" />
+        </trust-anchors>
+    </domain-config>
+    -->
 </network-security-config>

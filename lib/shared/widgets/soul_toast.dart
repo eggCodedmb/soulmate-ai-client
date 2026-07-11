@@ -186,21 +186,21 @@ class _ToastOverlayState extends State<_ToastOverlay>
     final fadeOutStart =
         widget.duration.inMilliseconds / _controller.duration!.inMilliseconds;
 
-    return IgnorePointer(
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          // 前 fadeOutStart 段保持 opacity=1，之后淡出
-          final opacity = _controller.value > fadeOutStart
-              ? 1.0 - ((_controller.value - fadeOutStart) / (1.0 - fadeOutStart))
-              : 1.0;
-          // 弹入时的缩放：前 10% 从 0.85 → 1.0
-          final scale = _controller.value < 0.1
-              ? 0.85 + 0.15 * (_controller.value / 0.1)
-              : 1.0;
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            // 前 fadeOutStart 段保持 opacity=1，之后淡出
+            final opacity = _controller.value > fadeOutStart
+                ? 1.0 - ((_controller.value - fadeOutStart) / (1.0 - fadeOutStart))
+                : 1.0;
+            // 弹入时的缩放：前 10% 从 0.85 → 1.0
+            final scale = _controller.value < 0.1
+                ? 0.85 + 0.15 * (_controller.value / 0.1)
+                : 1.0;
 
-          return Positioned.fill(
-            child: Align(
+            return Align(
               alignment: _getAlignment(),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -212,9 +212,8 @@ class _ToastOverlayState extends State<_ToastOverlay>
                   ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           decoration: BoxDecoration(
@@ -269,8 +268,9 @@ class _ToastOverlayState extends State<_ToastOverlay>
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Alignment _getAlignment() {
     switch (widget.position) {

@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 import '../storage/local_storage.dart';
 import '../../shared/models/asr_config.dart';
 
@@ -59,7 +62,7 @@ class AsrApiClient {
   Future<String> transcribe(String audioFilePath) async {
     final config = asrConfig;
 
-    if (!config.isCustomReady && !config.isMimo) {
+    if (config.providerType != 'sherpa_onnx' && !config.isCustomReady && !config.isMimo) {
       throw Exception('ASR 配置不完整，请检查服务器地址');
     }
 
@@ -67,11 +70,106 @@ class AsrApiClient {
     reset();
 
     switch (config.providerType) {
+      case 'sherpa_onnx':
+        return _transcribeSherpaOnnx(audioFilePath);
       case 'mimo':
         return _transcribeMimo(audioFilePath, config);
       case 'custom':
       default:
         return _transcribeWhisper(audioFilePath, config);
+    }
+  }
+
+  /// 本地离线语音识别 (SenseVoice 模型)
+  Future<String> _transcribeSherpaOnnx(String audioFilePath) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final modelPath = '${dir.path}/models/sensevoice.onnx';
+    final tokensPath = '${dir.path}/models/sensevoice-tokens.txt';
+
+    if (!await File(modelPath).exists()) {
+      throw Exception('本地 ASR 模型未找到。请前往「设置 → 离线模型管理」下载 SenseVoice 识别模型。');
+    }
+    if (!await File(tokensPath).exists()) {
+      throw Exception('本地 ASR 词表缺失。请前往「设置 → 离线模型管理」下载 SenseVoice 识别词表。');
+    }
+
+    final senseVoice = sherpa_onnx.OfflineSenseVoiceModelConfig(
+      model: modelPath,
+      language: 'auto',
+      useInverseTextNormalization: true,
+    );
+
+    final modelConfig = sherpa_onnx.OfflineModelConfig(
+      senseVoice: senseVoice,
+      tokens: tokensPath,
+      numThreads: 2,
+      debug: true,
+    );
+
+    final config = sherpa_onnx.OfflineRecognizerConfig(
+      model: modelConfig,
+    );
+
+    final recognizer = sherpa_onnx.OfflineRecognizer(config);
+
+    try {
+      final file = File(audioFilePath);
+      final bytes = await file.readAsBytes();
+      debugPrint('[SherpaOnnx] 音频文件大小: ${bytes.length} bytes, 路径: $audioFilePath');
+
+      int sampleRate = 16000;
+      Uint8List pcmBytes;
+
+      if (audioFilePath.toLowerCase().endsWith('.wav') && bytes.length > 44) {
+        // 解析 WAV 文件头，读取采样率和数据偏移
+        final byteData = ByteData.view(Uint8List.fromList(bytes).buffer);
+        sampleRate = byteData.getUint32(24, Endian.little);
+        final bitsPerSample = byteData.getUint16(34, Endian.little);
+        debugPrint('[SherpaOnnx] WAV 采样率: $sampleRate Hz, 位深: $bitsPerSample bit');
+
+        // 查找 'data' 标记位置，计算实际 PCM 数据偏移量
+        int dataOffset = 44; // 默认标准偏移
+        for (int i = 12; i < bytes.length - 8; i++) {
+          if (bytes[i] == 0x64 && bytes[i + 1] == 0x61 &&
+              bytes[i + 2] == 0x74 && bytes[i + 3] == 0x61) {
+            // 找到 'data' 标记
+            dataOffset = i + 8; // 跳过 'data' + 4 字节长度字段
+            break;
+          }
+        }
+        debugPrint('[SherpaOnnx] PCM 数据偏移量: $dataOffset');
+        pcmBytes = Uint8List.fromList(bytes.sublist(dataOffset));
+      } else {
+        pcmBytes = Uint8List.fromList(bytes);
+      }
+
+      // 将 PCM 16-bit 转换为 Float32List
+      final int16List = Int16List.view(
+        pcmBytes.buffer,
+        pcmBytes.offsetInBytes,
+        pcmBytes.lengthInBytes ~/ 2,
+      );
+      final float32List = Float32List(int16List.length);
+      for (int i = 0; i < int16List.length; i++) {
+        float32List[i] = int16List[i] / 32768.0;
+      }
+
+      debugPrint('[SherpaOnnx] PCM 采样数: ${float32List.length}, 预计时长: ${(float32List.length / sampleRate).toStringAsFixed(2)}s');
+
+      final stream = recognizer.createStream();
+      stream.acceptWaveform(samples: float32List, sampleRate: sampleRate);
+      recognizer.decode(stream);
+
+      final result = recognizer.getResult(stream);
+      final text = result.text;
+      debugPrint('[SherpaOnnx] 识别结果: "$text"');
+
+      // 释放 FFI 资源，避免内存泄露
+      stream.free();
+
+      return text.trim();
+    } finally {
+      recognizer.free();
     }
   }
 

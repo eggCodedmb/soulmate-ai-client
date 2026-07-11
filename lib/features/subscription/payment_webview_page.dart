@@ -70,6 +70,12 @@ class _PaymentWebViewPageState extends State<PaymentWebViewPage> {
               return NavigationDecision.prevent;
             }
 
+            // 拦截同步跳转地址 (支付宝网页支付付款成功后自动跳转回 returnUrl)
+            if (url.contains('/api/payment/return') || url.contains('/api/alipay/return')) {
+              Navigator.of(context).pop<PaymentWebViewResult>(PaymentWebViewResult.success);
+              return NavigationDecision.prevent;
+            }
+
             return NavigationDecision.navigate;
           },
         ),
@@ -201,26 +207,41 @@ class _PaymentWebViewPageState extends State<PaymentWebViewPage> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('取消支付？'),
-        content: const Text('确定要取消当前支付吗？'),
+        title: const Text('请确认支付状态'),
+        content: const Text('如果您已在弹出的支付窗口中付款，请点击“已完成支付”；如果已取消付款，请点击“稍后支付 / 取消”。'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('继续支付'),
-          ),
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
-              // 取消支付时返回 null，不触发轮询
-              Navigator.of(context).pop<String?>(null);
+              Navigator.of(context).pop<PaymentWebViewResult>(PaymentWebViewResult.close);
             },
             child: const Text(
-              '取消支付',
-              style: TextStyle(color: Colors.red),
+              '稍后支付 / 取消',
+              style: TextStyle(color: Colors.grey),
             ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              Navigator.of(context).pop<PaymentWebViewResult>(PaymentWebViewResult.success);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.brandPink,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('已完成支付'),
           ),
         ],
       ),
     );
   }
+}
+
+/// 支付宝支付 WebView 页面返回结果
+enum PaymentWebViewResult {
+  /// 支付成功（拦截到同步回调或用户主动确认）
+  success,
+
+  /// 取消/关闭支付（用户放弃支付或关闭页面）
+  close,
 }

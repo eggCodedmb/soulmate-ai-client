@@ -536,12 +536,15 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
         return;
       }
 
-      // 启动录音并获取音频流
+      // 启动录音并获取音频流（开启回声消除、噪声抑制与自动增益）
       final stream = await _recorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 16000,
           numChannels: 1,
+          echoCancel: true,
+          noiseSuppress: true,
+          autoGain: true,
         ),
       );
 

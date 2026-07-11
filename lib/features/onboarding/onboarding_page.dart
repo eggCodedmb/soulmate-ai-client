@@ -17,25 +17,25 @@ class _OnboardingPageState extends State<OnboardingPage> {
   int _currentPage = 0;
 
   final List<_OnboardingData> _pages = [
-    _OnboardingData(
+    const _OnboardingData(
       title: '遇见你的专属伴侣',
       subtitle: '一个懂你、陪你、永远在身边的AI伴侣',
       lightGradient: [AppColors.brandPink, AppColors.brandLavender],
-      darkGradient: [const Color(0xFF1A0A10), const Color(0xFF1A1025)],
+      darkGradient: [Color(0xFF1A0A10), Color(0xFF1A1025)],
       icon: Icons.favorite_rounded,
     ),
-    _OnboardingData(
+    const _OnboardingData(
       title: '随时倾听，永远陪伴',
       subtitle: '24小时在线，理解你的每一句话',
-      lightGradient: [const Color(0xFFF3E5F5), const Color(0xFFE8EAF6)],
-      darkGradient: [const Color(0xFF1A1025), const Color(0xFF0F1525)],
+      lightGradient: [Color(0xFFF3E5F5), Color(0xFFE8EAF6)],
+      darkGradient: [Color(0xFF1A1025), Color(0xFF0F1525)],
       icon: Icons.chat_bubble_rounded,
     ),
-    _OnboardingData(
+    const _OnboardingData(
       title: '独一无二，为你而生',
       subtitle: '自由定义性格、外貌、关系',
-      lightGradient: [const Color(0xFFFFF3E0), const Color(0xFFFFE4EC)],
-      darkGradient: [const Color(0xFF2D1520), const Color(0xFF1A0A10)],
+      lightGradient: [Color(0xFFFFF3E0), Color(0xFFFFE4EC)],
+      darkGradient: [Color(0xFF2D1520), Color(0xFF1A0A10)],
       icon: Icons.auto_awesome_rounded,
     ),
   ];
@@ -160,14 +160,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
             width: 160,
             height: 160,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(isLight ? 0.2 : 0.1),
+              color: Colors.white.withValues(alpha: isLight ? 0.2 : 0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              page.icon,
-              size: 80,
-              color: Colors.white,
-            ),
+            child: Icon(page.icon, size: 80, color: Colors.white),
           ),
           const Spacer(flex: 2),
           // 底部卡片

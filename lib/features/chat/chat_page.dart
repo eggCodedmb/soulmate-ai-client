@@ -12,7 +12,6 @@ import '../../core/network/api_service.dart';
 import '../../core/network/asr_api_client.dart';
 import '../../core/storage/local_storage.dart';
 import '../../core/storage/message_local_storage.dart';
-import '../../shared/models/companion.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/tts_config.dart';
 import '../../shared/models/reminder.dart';
@@ -544,12 +543,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     try {
       final String transcribedText;
 
-      if (LocalStorage.asrProviderType == 'custom') {
-        final asrClient = AsrApiClient();
-        transcribedText = await asrClient.transcribe(audioPath);
-      } else {
+      if (LocalStorage.asrProviderType == 'system') {
         final apiService = ref.read(apiServiceProvider);
         transcribedText = await apiService.transcribeAudio(audioPath);
+      } else {
+        final asrClient = AsrApiClient();
+        transcribedText = await asrClient.transcribe(audioPath);
       }
 
       if (!mounted) return;

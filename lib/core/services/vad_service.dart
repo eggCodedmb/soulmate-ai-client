@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 
 import '../../core/utils/audio_utils.dart';
+import '../../core/storage/local_storage.dart';
 
 class VadState {
   final bool isRecording;
@@ -59,14 +60,25 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
     if (!await modelDir.exists()) {
       await modelDir.create(recursive: true);
     }
-    final modelPath = '${modelDir.path}/silero_vad.onnx';
+
+    final version = LocalStorage.vadModelVersion;
+    final fileName = version == 'v5' ? 'silero_vad_v5.onnx' : 'silero_vad.onnx';
+    final modelPath = '${modelDir.path}/$fileName';
     final file = File(modelPath);
+
     if (!await file.exists()) {
+      if (version == 'v5') {
+        // v5 模型需要通过「离线模型管理」页面下载
+        throw Exception('VAD v5 模型未下载。请前往「设置 → 离线模型管理」下载 Silero VAD v5 模型。');
+      }
+      // v4 默认从 assets 中拷贝
       final data = await rootBundle.load('assets/silero_vad.onnx');
       await file.writeAsBytes(
         data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
       );
     }
+
+    debugPrint('[VAD] 使用模型: $fileName (版本: $version)');
     return modelPath;
   }
 
@@ -82,26 +94,30 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
     }
 
     try {
-      final modelPath = await _getModelPath();
+      if (_vad == null) {
+        final modelPath = await _getModelPath();
 
-      final sileroConfig = sherpa_onnx.SileroVadModelConfig(
-        model: modelPath,
-        minSilenceDuration: 1.0,
-        minSpeechDuration: 0.3,
-        threshold: 0.75,
-        windowSize: 512,
-      );
+        final sileroConfig = sherpa_onnx.SileroVadModelConfig(
+          model: modelPath,
+          minSilenceDuration: LocalStorage.vadMinSilenceDuration,
+          minSpeechDuration: LocalStorage.vadMinSpeechDuration,
+          threshold: LocalStorage.vadThreshold,
+          windowSize: 512,
+        );
 
-      final config = sherpa_onnx.VadModelConfig(
-        sileroVad: sileroConfig,
-        numThreads: 1,
-        debug: false,
-      );
+        final config = sherpa_onnx.VadModelConfig(
+          sileroVad: sileroConfig,
+          numThreads: 1,
+          debug: false,
+        );
 
-      _vad = sherpa_onnx.VoiceActivityDetector(
-        config: config,
-        bufferSizeInSeconds: 30,
-      );
+        _vad = sherpa_onnx.VoiceActivityDetector(
+          config: config,
+          bufferSizeInSeconds: 30,
+        );
+      } else {
+        _vad!.reset();
+      }
 
       _isListening = true;
       state = state.copyWith(
@@ -124,9 +140,9 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
             state = state.copyWith(currentDb: db);
           }
 
-          // Noise gate: if volume is below -42.0 dBFS (approx. 45 dB SPL noise),
+          // Noise gate: if volume is below configured threshold,
           // treat the chunk as absolute silence to allow the VAD to trigger speech end.
-          final processedSamples = db < -42.0
+          final processedSamples = db < LocalStorage.vadNoiseGateThreshold
               ? Float32List(samples.length)
               : samples;
 
