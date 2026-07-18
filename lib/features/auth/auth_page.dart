@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/constants/app_colors.dart';
 import '../../core/network/api_service.dart';
 import '../../core/storage/secure_storage.dart';
 import '../../core/storage/local_storage.dart';
@@ -92,7 +91,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       );
 
       if (response.token.isEmpty) {
-        _showSnackBar('登录失败：服务器未返回有效凭证');
+        _showSnackBar('登录失败：凭证无效');
         return;
       }
 
@@ -153,9 +152,9 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -207,8 +206,9 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                     if (value == null || value.isEmpty) {
                       return '请输入邮箱地址';
                     }
-                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-                        .hasMatch(value)) {
+                    if (!RegExp(
+                      r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                    ).hasMatch(value)) {
                       return '请输入有效的邮箱地址';
                     }
                     return null;

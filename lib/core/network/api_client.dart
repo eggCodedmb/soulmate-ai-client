@@ -10,7 +10,7 @@ import 'interceptors/logging_interceptor.dart';
 /// API客户端配置 - 仅保留主服务器地址
 class ApiClient {
   // 服务器地址
-  static const String primaryBaseUrl = 'http://192.168.2.240/ai';
+  static const String primaryBaseUrl = 'https://hupokeji.top';
   static const String apiPrefix = '/api';
 
   // 超时配置

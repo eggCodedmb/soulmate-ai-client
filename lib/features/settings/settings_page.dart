@@ -170,245 +170,261 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                     ),
                     const SizedBox(height: 20),
                     // LLM 模型配置
-                    SettingSection(
-                      title: '模型配置',
-                      icon: Icons.smart_toy_outlined,
-                      iconColor: const Color(0xFFFF9800),
-                      children: [
-                        SettingMenuItem(
-                          icon: Icons.psychology_outlined,
-                          iconColor: const Color(0xFFE91E63),
-                          title: '模型服务商',
-                          subtitle: _llmProviderSubtitle(),
-                          onTap: () => showLlmProviderDialog(
-                            context,
-                            onSaved: () => setState(() {}),
-                          ),
-                        ),
-                        if (LocalStorage.llmProviderType != 'system') ...[
-                          const SettingMenuDivider(),
-                          SettingMenuItem(
-                            icon: Icons.link_outlined,
-                            iconColor: const Color(0xFF00BCD4),
-                            title: '服务器地址',
-                            subtitle: LocalStorage.llmBaseUrl ?? '未配置',
-                            onTap: () => showLlmUrlDialog(
-                              context,
-                              onSaved: () => setState(() {}),
+                    StatefulBuilder(
+                      builder: (context, setStateSection) {
+                        return SettingSection(
+                          title: '模型配置',
+                          icon: Icons.smart_toy_outlined,
+                          iconColor: const Color(0xFFFF9800),
+                          children: [
+                            SettingMenuItem(
+                              icon: Icons.psychology_outlined,
+                              iconColor: const Color(0xFFE91E63),
+                              title: '模型服务商',
+                              subtitle: _llmProviderSubtitle(),
+                              onTap: () => showLlmProviderDialog(
+                                context,
+                                onSaved: () => setStateSection(() {}),
+                              ),
                             ),
-                          ),
-                          const SettingMenuDivider(),
-                          SettingMenuItem(
-                            icon: Icons.vpn_key_outlined,
-                            iconColor: const Color(0xFFFF9800),
-                            title: 'API Key',
-                            subtitle:
-                                (LocalStorage.llmApiKey == null ||
-                                    LocalStorage.llmApiKey!.isEmpty)
-                                ? '未配置（本地模型可留空）'
-                                : '已配置 (已隐藏)',
-                            onTap: () => showLlmApiKeyDialog(
-                              context,
-                              onSaved: () => setState(() {}),
-                            ),
-                          ),
-                          const SettingMenuDivider(),
-                          SettingMenuItem(
-                            icon: Icons.smart_toy_outlined,
-                            iconColor: const Color(0xFF4CAF50),
-                            title: '模型名称',
-                            subtitle: LocalStorage.llmModel ?? '未配置',
-                            onTap: () => showLlmModelDialog(
-                              context,
-                              onSaved: () => setState(() {}),
-                            ),
-                          ),
-                        ],
-                      ],
+                            if (LocalStorage.llmProviderType != 'system') ...[
+                              const SettingMenuDivider(),
+                              SettingMenuItem(
+                                icon: Icons.link_outlined,
+                                iconColor: const Color(0xFF00BCD4),
+                                title: '服务器地址',
+                                subtitle: LocalStorage.llmBaseUrl ?? '未配置',
+                                onTap: () => showLlmUrlDialog(
+                                  context,
+                                  onSaved: () => setStateSection(() {}),
+                                ),
+                              ),
+                              const SettingMenuDivider(),
+                              SettingMenuItem(
+                                icon: Icons.vpn_key_outlined,
+                                iconColor: const Color(0xFFFF9800),
+                                title: 'API Key',
+                                subtitle:
+                                    (LocalStorage.llmApiKey == null ||
+                                        LocalStorage.llmApiKey!.isEmpty)
+                                    ? '未配置（本地模型可留空）'
+                                    : '已配置 (已隐藏)',
+                                onTap: () => showLlmApiKeyDialog(
+                                  context,
+                                  onSaved: () => setStateSection(() {}),
+                                ),
+                              ),
+                              const SettingMenuDivider(),
+                              SettingMenuItem(
+                                icon: Icons.smart_toy_outlined,
+                                iconColor: const Color(0xFF4CAF50),
+                                title: '模型名称',
+                                subtitle: LocalStorage.llmModel ?? '未配置',
+                                onTap: () => showLlmModelDialog(
+                                  context,
+                                  onSaved: () => setStateSection(() {}),
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 20),
                     // TTS 语音配置
-                    SettingSection(
-                      title: '语音合成 (TTS)',
-                      icon: Icons.record_voice_over_outlined,
-                      iconColor: const Color(0xFF7C4DFF),
-                      children: [
-                        SettingMenuItem(
-                          icon: Icons.business_rounded,
-                          iconColor: const Color(0xFF9C27B0),
-                          title: 'TTS 服务商',
-                          subtitle: LocalStorage.ttsProviderType == 'mimo'
-                              ? 'Xiaomi MiMo (云端)'
-                              : 'Voicebox (本地)',
-                          onTap: () => showTtsProviderDialog(
-                            context,
-                            onSaved: () => setState(() {}),
-                          ),
-                        ),
-                        const SettingMenuDivider(),
-                        SettingMenuItem(
-                          icon: Icons.dns_outlined,
+                    StatefulBuilder(
+                      builder: (context, setStateSection) {
+                        return SettingSection(
+                          title: '语音合成 (TTS)',
+                          icon: Icons.record_voice_over_outlined,
                           iconColor: const Color(0xFF7C4DFF),
-                          title: 'TTS 服务器地址',
-                          subtitle: LocalStorage.ttsBaseUrl ?? '未配置',
-                          onTap: () => showTtsUrlDialog(
-                            context,
-                            ref,
-                            onSaved: () => setState(() {}),
-                          ),
-                        ),
-                        if (LocalStorage.ttsProviderType == 'mimo') ...[
-                          const SettingMenuDivider(),
-                          SettingMenuItem(
-                            icon: Icons.vpn_key_outlined,
-                            iconColor: const Color(0xFFFF9800),
-                            title: 'API Key',
-                            subtitle:
-                                (LocalStorage.ttsApiKey == null ||
-                                    LocalStorage.ttsApiKey!.isEmpty)
-                                ? '未配置'
-                                : '已配置 (已隐藏)',
-                            onTap: () => showTtsApiKeyDialog(
-                              context,
-                              onSaved: () => setState(() {}),
+                          children: [
+                            SettingMenuItem(
+                              icon: Icons.business_rounded,
+                              iconColor: const Color(0xFF9C27B0),
+                              title: 'TTS 服务商',
+                              subtitle: LocalStorage.ttsProviderType == 'mimo'
+                                  ? 'Xiaomi MiMo (云端)'
+                                  : 'Voicebox (本地)',
+                              onTap: () => showTtsProviderDialog(
+                                context,
+                                onSaved: () => setStateSection(() {}),
+                              ),
                             ),
-                          ),
-                          const SettingMenuDivider(),
-                          SettingMenuItem(
-                            icon: Icons.smart_toy_outlined,
-                            iconColor: const Color(0xFF4CAF50),
-                            title: '模型名称',
-                            subtitle: LocalStorage.ttsModel,
-                            onTap: () => showTtsModelDialog(
-                              context,
-                              onSaved: () => setState(() {}),
+                            const SettingMenuDivider(),
+                            SettingMenuItem(
+                              icon: Icons.dns_outlined,
+                              iconColor: const Color(0xFF7C4DFF),
+                              title: 'TTS 服务器地址',
+                              subtitle: LocalStorage.ttsBaseUrl ?? '未配置',
+                              onTap: () => showTtsUrlDialog(
+                                context,
+                                ref,
+                                onSaved: () => setStateSection(() {}),
+                              ),
                             ),
-                          ),
-                        ],
-                        const SettingMenuDivider(),
-                        SettingMenuItem(
-                          icon: Icons.tune_rounded,
-                          iconColor: const Color(0xFF00BCD4),
-                          title: '默认声音配置',
-                          subtitle: _globalTtsSubtitle(),
-                          onTap: () => showGlobalTtsConfigDialog(
-                            context,
-                            ref,
-                            onSaved: () => setState(() {}),
-                          ),
-                        ),
-                        const SettingMenuDivider(),
-                        SettingMenuItem(
-                          icon: Icons.volume_up_outlined,
-                          iconColor: const Color(0xFFE91E63),
-                          title: '声音档案管理',
-                          subtitle: _ttsProfilesCountText(),
-                          onTap: () => showTtsProfilesDialog(context, ref),
-                        ),
-                      ],
+                            if (LocalStorage.ttsProviderType == 'mimo') ...[
+                              const SettingMenuDivider(),
+                              SettingMenuItem(
+                                icon: Icons.vpn_key_outlined,
+                                iconColor: const Color(0xFFFF9800),
+                                title: 'API Key',
+                                subtitle:
+                                    (LocalStorage.ttsApiKey == null ||
+                                        LocalStorage.ttsApiKey!.isEmpty)
+                                    ? '未配置'
+                                    : '已配置 (已隐藏)',
+                                onTap: () => showTtsApiKeyDialog(
+                                  context,
+                                  onSaved: () => setStateSection(() {}),
+                                ),
+                              ),
+                              const SettingMenuDivider(),
+                              SettingMenuItem(
+                                icon: Icons.smart_toy_outlined,
+                                iconColor: const Color(0xFF4CAF50),
+                                title: '模型名称',
+                                subtitle: LocalStorage.ttsModel,
+                                onTap: () => showTtsModelDialog(
+                                  context,
+                                  onSaved: () => setStateSection(() {}),
+                                ),
+                              ),
+                            ],
+                            const SettingMenuDivider(),
+                            SettingMenuItem(
+                              icon: Icons.tune_rounded,
+                              iconColor: const Color(0xFF00BCD4),
+                              title: '默认声音配置',
+                              subtitle: _globalTtsSubtitle(),
+                              onTap: () => showGlobalTtsConfigDialog(
+                                context,
+                                ref,
+                                onSaved: () => setStateSection(() {}),
+                              ),
+                            ),
+                            const SettingMenuDivider(),
+                            SettingMenuItem(
+                              icon: Icons.volume_up_outlined,
+                              iconColor: const Color(0xFFE91E63),
+                              title: '声音档案管理',
+                              subtitle: _ttsProfilesCountText(),
+                              onTap: () => showTtsProfilesDialog(context, ref),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 20),
                     // ASR 语音识别
-                    SettingSection(
-                      title: '语音识别 (ASR)',
-                      icon: Icons.mic_outlined,
-                      iconColor: const Color(0xFF009688),
-                      children: [
-                        SettingMenuItem(
-                          icon: Icons.settings_input_antenna_outlined,
+                    StatefulBuilder(
+                      builder: (context, setStateSection) {
+                        return SettingSection(
+                          title: '语音识别 (ASR)',
+                          icon: Icons.mic_outlined,
                           iconColor: const Color(0xFF009688),
-                          title: 'ASR 服务商',
-                          subtitle: _asrProviderSubtitle(),
-                          onTap: () => showAsrProviderDialog(
-                            context,
-                            onSaved: () => setState(() {}),
-                          ),
-                        ),
-                        const SettingMenuDivider(),
-                        SettingMenuItem(
-                          icon: Icons.tune_rounded,
-                          iconColor: const Color(0xFF00BCD4),
-                          title: 'VAD 语音检测调优',
-                          subtitle: '微调静音判定、检测阈值与噪声过滤',
-                          onTap: () => showVadSettingsDialog(
-                            context,
-                            onSaved: () => setState(() {}),
-                          ),
-                        ),
-                        const SettingMenuDivider(),
-                        SettingMenuItem(
-                          icon: Icons.download_for_offline_rounded,
-                          iconColor: const Color(0xFFFF9800),
-                          title: '离线模型管理',
-                          subtitle: '下载或部署本地 VAD、ASR 离线大模型',
-                          onTap: () => Navigator.push<void>(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (context) => const ModelDownloadPage(),
+                          children: [
+                            SettingMenuItem(
+                              icon: Icons.settings_input_antenna_outlined,
+                              iconColor: const Color(0xFF009688),
+                              title: 'ASR 服务商',
+                              subtitle: _asrProviderSubtitle(),
+                              onTap: () => showAsrProviderDialog(
+                                context,
+                                onSaved: () => setStateSection(() {}),
+                              ),
                             ),
-                          ),
-                        ),
-                        if (LocalStorage.asrProviderType != 'system' && LocalStorage.asrProviderType != 'sherpa_onnx') ...[
-                          const SettingMenuDivider(),
-                          SettingMenuItem(
-                            icon: Icons.dns_outlined,
-                            iconColor: const Color(0xFF00BCD4),
-                            title: '服务器地址',
-                            subtitle: LocalStorage.asrBaseUrl ?? '未配置',
-                            onTap: () => showAsrUrlDialog(
-                              context,
-                              onSaved: () => setState(() {}),
+                            const SettingMenuDivider(),
+                            SettingMenuItem(
+                              icon: Icons.tune_rounded,
+                              iconColor: const Color(0xFF00BCD4),
+                              title: 'VAD 语音检测调优',
+                              subtitle: '微调静音判定、检测阈值与噪声过滤',
+                              onTap: () => showVadSettingsDialog(
+                                context,
+                                onSaved: () => setStateSection(() {}),
+                              ),
                             ),
-                          ),
-                          const SettingMenuDivider(),
-                          SettingMenuItem(
-                            icon: Icons.vpn_key_outlined,
-                            iconColor: const Color(0xFFFF9800),
-                            title: 'API Key',
-                            subtitle:
-                                (LocalStorage.asrApiKey == null ||
-                                    LocalStorage.asrApiKey!.isEmpty)
-                                ? '未配置'
-                                : '已配置 (已隐藏)',
-                            onTap: () => showAsrApiKeyDialog(
-                              context,
-                              onSaved: () => setState(() {}),
+                            const SettingMenuDivider(),
+                            SettingMenuItem(
+                              icon: Icons.download_for_offline_rounded,
+                              iconColor: const Color(0xFFFF9800),
+                              title: '离线模型管理',
+                              subtitle: '下载或部署本地 VAD、ASR 离线大模型',
+                              onTap: () => Navigator.push<void>(
+                                context,
+                                MaterialPageRoute<void>(
+                                  builder: (context) => const ModelDownloadPage(),
+                                ),
+                              ),
                             ),
-                          ),
-                          const SettingMenuDivider(),
-                          SettingMenuItem(
-                            icon: Icons.smart_toy_outlined,
-                            iconColor: const Color(0xFF4CAF50),
-                            title: '模型名称',
-                            subtitle: LocalStorage.asrModel,
-                            onTap: () => showAsrModelDialog(
-                              context,
-                              onSaved: () => setState(() {}),
-                            ),
-                          ),
-                        ],
-                      ],
+                            if (LocalStorage.asrProviderType != 'system' && LocalStorage.asrProviderType != 'sherpa_onnx') ...[
+                              const SettingMenuDivider(),
+                              SettingMenuItem(
+                                icon: Icons.dns_outlined,
+                                iconColor: const Color(0xFF00BCD4),
+                                title: '服务器地址',
+                                subtitle: LocalStorage.asrBaseUrl ?? '未配置',
+                                onTap: () => showAsrUrlDialog(
+                                  context,
+                                  onSaved: () => setStateSection(() {}),
+                                ),
+                              ),
+                              const SettingMenuDivider(),
+                              SettingMenuItem(
+                                icon: Icons.vpn_key_outlined,
+                                iconColor: const Color(0xFFFF9800),
+                                title: 'API Key',
+                                subtitle:
+                                    (LocalStorage.asrApiKey == null ||
+                                        LocalStorage.asrApiKey!.isEmpty)
+                                    ? '未配置'
+                                    : '已配置 (已隐藏)',
+                                onTap: () => showAsrApiKeyDialog(
+                                  context,
+                                  onSaved: () => setStateSection(() {}),
+                                ),
+                              ),
+                              const SettingMenuDivider(),
+                              SettingMenuItem(
+                                icon: Icons.smart_toy_outlined,
+                                iconColor: const Color(0xFF4CAF50),
+                                title: '模型名称',
+                                subtitle: LocalStorage.asrModel,
+                                onTap: () => showAsrModelDialog(
+                                  context,
+                                  onSaved: () => setStateSection(() {}),
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 20),
                     // 服务器配置
-                    SettingSection(
-                      title: '服务器配置',
-                      icon: Icons.dns_outlined,
-                      iconColor: const Color(0xFF2196F3),
-                      children: [
-                        SettingMenuItem(
-                          icon: Icons.computer_rounded,
-                          iconColor: const Color(0xFF4CAF50),
-                          title: '服务器地址',
-                          subtitle: LocalStorage.serverType == 'online'
-                              ? '线上服务 (https://hupokeji.top)'
-                              : '本地服务 (${LocalStorage.localServerUrl})',
-                          onTap: () => showServerConfigDialog(
-                            context,
-                            onSaved: () => setState(() {}),
-                          ),
-                        ),
-                      ],
+                    StatefulBuilder(
+                      builder: (context, setStateSection) {
+                        return SettingSection(
+                          title: '服务器配置',
+                          icon: Icons.dns_outlined,
+                          iconColor: const Color(0xFF2196F3),
+                          children: [
+                            SettingMenuItem(
+                              icon: Icons.computer_rounded,
+                              iconColor: const Color(0xFF4CAF50),
+                              title: '服务器地址',
+                              subtitle: LocalStorage.serverType == 'online'
+                                  ? '线上服务 (https://hupokeji.top)'
+                                  : '本地服务 (${LocalStorage.localServerUrl})',
+                              onTap: () => showServerConfigDialog(
+                                context,
+                                onSaved: () => setStateSection(() {}),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 20),
                     // 通知设置

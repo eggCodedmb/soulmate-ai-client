@@ -77,11 +77,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
     final isDark = theme.brightness == Brightness.dark;
     final surfaceColor = isDark ? const Color(0xFF0D0D0F) : Colors.white;
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: EdgeInsets.only(
+    return Container(
+      padding: EdgeInsets.only(
             left: 12,
             right: 8,
             top: 10,
@@ -128,8 +125,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
               _buildSendButton(isDark),
             ],
           ),
-        ),
-      ),
     );
   }
 

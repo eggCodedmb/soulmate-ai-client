@@ -175,12 +175,9 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage>
                 _buildSliverAppBar(context, isLight),
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                     child: Column(
                       children: [
-                        // 昵称徽章
-                        _buildNicknameBadge(context),
-                        const SizedBox(height: 24),
 
                         // ── 基本信息卡片 ──
                         _buildSectionCard(
@@ -402,78 +399,7 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage>
     );
   }
 
-  // ══════════════════════════════════════════════
-  //  昵称徽章
-  // ══════════════════════════════════════════════
 
-  Widget _buildNicknameBadge(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.level1(context),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.brandPink, AppColors.brandLavender],
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.badge_outlined, color: Colors.white, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _nicknameController.text.isEmpty
-                      ? '未设置昵称'
-                      : _nicknameController.text,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'ID: ${_user?.id ?? '--'}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppColors.brandPink.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              _user?.guestFlag == 1 ? '游客' : '免费版',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: AppColors.brandPink,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   // ══════════════════════════════════════════════
   //  卡片容器

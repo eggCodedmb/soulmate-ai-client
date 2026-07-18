@@ -62,7 +62,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _ttsNotifier = ref.read(ttsProvider.notifier);
     _conversationId = int.parse(widget.conversationId);
     _inputFocusNode.addListener(() {
-      if (_inputFocusNode.hasFocus) {
+      if (_inputFocusNode.hasFocus && _showExtraMenu) {
         setState(() {
           _showExtraMenu = false;
         });
