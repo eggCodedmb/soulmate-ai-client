@@ -50,6 +50,17 @@ void showTtsProviderDialog(
           _buildProviderOption(
             context,
             icon: Icons.dns_outlined,
+            title: '系统默认 (系统 TTS)',
+            subtitle: '使用后端内置的语音合成服务（推荐）',
+            value: 'system',
+            isSelected: currentProvider == 'system',
+            isDark: isDark,
+            onSaved: onSaved,
+          ),
+          const SizedBox(height: 12),
+          _buildProviderOption(
+            context,
+            icon: Icons.computer_rounded,
             title: 'Voicebox (本地)',
             subtitle: '连接到本地运行的 Voicebox 语音服务器',
             value: 'voicebox',
@@ -92,7 +103,9 @@ Widget _buildProviderOption(
 
       // 自动适配默认地址
       final currentUrl = LocalStorage.ttsBaseUrl;
-      if (value == 'mimo') {
+      if (value == 'system') {
+        // 系统默认使用后端核心 API 地址或无需重载
+      } else if (value == 'mimo') {
         if (currentUrl == null ||
             currentUrl.isEmpty ||
             currentUrl.contains('127.0.0.1') ||

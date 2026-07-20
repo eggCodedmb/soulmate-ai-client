@@ -450,16 +450,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
               // TODO: 跳转到情绪日记页
             },
           ),
-          _buildDivider(context, isDark),
-          _buildMenuItem(
-            context,
-            icon: Icons.alarm_rounded,
-            iconColor: const Color(0xFF4CAF50),
-            title: '定时叫醒/通知',
-            subtitle: '伴侣来电唤醒与日程提醒',
-            isDark: isDark,
-            onTap: () => context.push('/profile/reminders'),
-          ),
+
           _buildDivider(context, isDark),
           _buildMenuItem(
             context,

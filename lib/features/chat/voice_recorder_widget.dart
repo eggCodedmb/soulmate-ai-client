@@ -46,7 +46,7 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
   VoiceRecordState _state = VoiceRecordState.ready;
   final AudioRecorder _recorder = AudioRecorder();
   Timer? _durationTimer;
-  int _recordDurationMs = 0;
+  final ValueNotifier<int> _recordDurationNotifier = ValueNotifier<int>(0);
 
   /// 取消区域的全局 Y 坐标阈值（按钮上方 120px 以上视为取消区域）
   double _cancelZoneThreshold = 0;
@@ -90,6 +90,7 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
   @override
   void dispose() {
     _durationTimer?.cancel();
+    _recordDurationNotifier.dispose();
     _overlayController.dispose();
     _waveController.dispose();
     _pulseController.dispose();
@@ -122,13 +123,16 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
           encoder: AudioEncoder.wav,
           sampleRate: 16000,
           numChannels: 1,
+          echoCancel: true,
+          noiseSuppress: true,
+          autoGain: true,
         ),
         path: filePath,
       );
 
+      _recordDurationNotifier.value = 0;
       setState(() {
         _state = VoiceRecordState.recording;
-        _recordDurationMs = 0;
       });
 
       // 启动动画
@@ -136,13 +140,11 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
       unawaited(_waveController.repeat());
       unawaited(_pulseController.repeat());
 
-      // 启动计时器
+      // 启动计时器 (使用 ValueNotifier 局部更新 UI，避免每 100ms 触发整树 setState 重绘及 BackdropFilter 重新滤镜造成的卡顿)
       _durationTimer = Timer.periodic(
         const Duration(milliseconds: 100),
         (_) {
-          if (mounted) {
-            setState(() => _recordDurationMs += 100);
-          }
+          _recordDurationNotifier.value += 100;
         },
       );
     } on Exception catch (e) {
@@ -162,8 +164,9 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
 
     setState(() => _state = VoiceRecordState.ready);
 
-    if (send && path != null && _recordDurationMs >= 500) {
-      widget.onSend(path, _recordDurationMs);
+    final durationMs = _recordDurationNotifier.value;
+    if (send && path != null && durationMs >= 500) {
+      widget.onSend(path, durationMs);
     } else {
       // 取消或录音太短：删除临时文件
       if (path != null) {
@@ -178,7 +181,7 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
       }
     }
 
-    _recordDurationMs = 0;
+    _recordDurationNotifier.value = 0;
     _cancelZoneCalculated = false;
   }
 
@@ -413,25 +416,30 @@ class _VoiceRecorderWidgetState extends State<VoiceRecorderWidget>
   }
 
   Widget _buildDurationText(bool isCanceling, bool isDark) {
-    final seconds = _recordDurationMs ~/ 1000;
-    final minutes = seconds ~/ 60;
-    final secs = seconds % 60;
-    final timeStr =
-        '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    return ValueListenableBuilder<int>(
+      valueListenable: _recordDurationNotifier,
+      builder: (context, recordDurationMs, _) {
+        final seconds = recordDurationMs ~/ 1000;
+        final minutes = seconds ~/ 60;
+        final secs = seconds % 60;
+        final timeStr =
+            '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
 
-    return AnimatedDefaultTextStyle(
-      duration: const Duration(milliseconds: 200),
-      style: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w500,
-        fontFeatures: const [FontFeature.tabularFigures()],
-        color: isCanceling
-            ? Colors.red.withValues(alpha: 0.8)
-            : isDark
-                ? Colors.white.withValues(alpha: 0.5)
-                : Colors.black.withValues(alpha: 0.4),
-      ),
-      child: Text(timeStr),
+        return AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 200),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            fontFeatures: const [FontFeature.tabularFigures()],
+            color: isCanceling
+                ? Colors.red.withValues(alpha: 0.8)
+                : isDark
+                    ? Colors.white.withValues(alpha: 0.5)
+                    : Colors.black.withValues(alpha: 0.4),
+          ),
+          child: Text(timeStr),
+        );
+      },
     );
   }
 

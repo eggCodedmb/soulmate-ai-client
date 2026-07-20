@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,7 +15,6 @@ import '../../core/storage/local_storage.dart';
 import '../../core/storage/message_local_storage.dart';
 import '../../shared/models/message.dart';
 import '../../shared/models/tts_config.dart';
-import '../../shared/models/reminder.dart';
 import '../../shared/widgets/soul_toast.dart';
 import 'tts_audio_service.dart';
 import 'tts_provider.dart';
@@ -518,20 +518,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void _startAiCall() {
     if (_companionId == null) return;
 
-    final mockReminder = Reminder(
-      id: 0,
-      userId: 0,
-      companionId: _companionId!,
-      companionName: _companionName ?? 'AI伴侣',
-      companionAvatarUrl: _companionAvatarUrl,
-      reminderTime: '',
-      textTemplate: '你好呀！很高兴接到你的电话，今天有什么想和我聊聊的吗？',
-      type: 'AI_CALL',
-    );
-
     context.push(
-      '/call/0?outgoing=true&conversationId=$_conversationId',
-      extra: mockReminder,
+      '/call?companionId=$_companionId&outgoing=true&conversationId=$_conversationId',
     );
   }
 
@@ -539,6 +527,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (_companionId == null || _isStreaming) return;
 
     setState(() => _isTranscribing = true);
+    // 刷新单帧UI让"语音识别中..."加载状态先顺利绘制，防止主线程无感知卡顿
+    await Future<void>.delayed(Duration.zero);
 
     try {
       final String transcribedText;
@@ -579,6 +569,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         SoulToast.error(context, '语音识别失败，请重试');
         setState(() => _isTranscribing = false);
       }
+    } finally {
+      // 及时清理临时录音文件
+      try {
+        final file = File(audioPath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (_) {}
     }
   }
 

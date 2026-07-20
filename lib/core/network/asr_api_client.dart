@@ -82,96 +82,9 @@ class AsrApiClient {
 
   /// 本地离线语音识别 (SenseVoice 模型)
   Future<String> _transcribeSherpaOnnx(String audioFilePath) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final modelPath = '${dir.path}/models/sensevoice.onnx';
-    final tokensPath = '${dir.path}/models/sensevoice-tokens.txt';
-
-    if (!await File(modelPath).exists()) {
-      throw Exception('本地 ASR 模型未找到。请前往「设置 → 离线模型管理」下载 SenseVoice 识别模型。');
-    }
-    if (!await File(tokensPath).exists()) {
-      throw Exception('本地 ASR 词表缺失。请前往「设置 → 离线模型管理」下载 SenseVoice 识别词表。');
-    }
-
-    final senseVoice = sherpa_onnx.OfflineSenseVoiceModelConfig(
-      model: modelPath,
-      language: 'auto',
-      useInverseTextNormalization: true,
-    );
-
-    final modelConfig = sherpa_onnx.OfflineModelConfig(
-      senseVoice: senseVoice,
-      tokens: tokensPath,
-      numThreads: 2,
-      debug: true,
-    );
-
-    final config = sherpa_onnx.OfflineRecognizerConfig(
-      model: modelConfig,
-    );
-
-    final recognizer = sherpa_onnx.OfflineRecognizer(config);
-
-    try {
-      final file = File(audioFilePath);
-      final bytes = await file.readAsBytes();
-      debugPrint('[SherpaOnnx] 音频文件大小: ${bytes.length} bytes, 路径: $audioFilePath');
-
-      int sampleRate = 16000;
-      Uint8List pcmBytes;
-
-      if (audioFilePath.toLowerCase().endsWith('.wav') && bytes.length > 44) {
-        // 解析 WAV 文件头，读取采样率和数据偏移
-        final byteData = ByteData.view(Uint8List.fromList(bytes).buffer);
-        sampleRate = byteData.getUint32(24, Endian.little);
-        final bitsPerSample = byteData.getUint16(34, Endian.little);
-        debugPrint('[SherpaOnnx] WAV 采样率: $sampleRate Hz, 位深: $bitsPerSample bit');
-
-        // 查找 'data' 标记位置，计算实际 PCM 数据偏移量
-        int dataOffset = 44; // 默认标准偏移
-        for (int i = 12; i < bytes.length - 8; i++) {
-          if (bytes[i] == 0x64 && bytes[i + 1] == 0x61 &&
-              bytes[i + 2] == 0x74 && bytes[i + 3] == 0x61) {
-            // 找到 'data' 标记
-            dataOffset = i + 8; // 跳过 'data' + 4 字节长度字段
-            break;
-          }
-        }
-        debugPrint('[SherpaOnnx] PCM 数据偏移量: $dataOffset');
-        pcmBytes = Uint8List.fromList(bytes.sublist(dataOffset));
-      } else {
-        pcmBytes = Uint8List.fromList(bytes);
-      }
-
-      // 将 PCM 16-bit 转换为 Float32List
-      final int16List = Int16List.view(
-        pcmBytes.buffer,
-        pcmBytes.offsetInBytes,
-        pcmBytes.lengthInBytes ~/ 2,
-      );
-      final float32List = Float32List(int16List.length);
-      for (int i = 0; i < int16List.length; i++) {
-        float32List[i] = int16List[i] / 32768.0;
-      }
-
-      debugPrint('[SherpaOnnx] PCM 采样数: ${float32List.length}, 预计时长: ${(float32List.length / sampleRate).toStringAsFixed(2)}s');
-
-      final stream = recognizer.createStream();
-      stream.acceptWaveform(samples: float32List, sampleRate: sampleRate);
-      recognizer.decode(stream);
-
-      final result = recognizer.getResult(stream);
-      final text = result.text;
-      debugPrint('[SherpaOnnx] 识别结果: "$text"');
-
-      // 释放 FFI 资源，避免内存泄露
-      stream.free();
-
-      return text.trim();
-    } finally {
-      recognizer.free();
-    }
+    return SherpaOnnxAsrService.decodeAudioFile(audioFilePath);
   }
+
 
   // ==================== 小米 MiMo ASR ====================
 
@@ -316,5 +229,131 @@ class AsrApiClient {
       throw Exception('ASR 请求过于频繁，请稍后重试');
     }
     throw Exception('ASR 请求失败: ${e.message}');
+  }
+}
+
+/// Sherpa-ONNX 离线识别器单例服务（驻留内存，规避每次重新加载 200MB+ 模型）
+class SherpaOnnxAsrService {
+  static sherpa_onnx.OfflineRecognizer? _recognizer;
+  static String? _loadedModelPath;
+  static bool _isInitializing = false;
+
+  /// 预热 / 初始化识别器
+  static Future<sherpa_onnx.OfflineRecognizer?> getRecognizer({
+    String? modelPath,
+    String? tokensPath,
+  }) async {
+    if (_recognizer != null) {
+      return _recognizer;
+    }
+
+    if (_isInitializing) {
+      while (_isInitializing) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      if (_recognizer != null) return _recognizer;
+    }
+
+    _isInitializing = true;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final targetModelPath = modelPath ?? '${dir.path}/models/sensevoice.onnx';
+      final targetTokensPath = tokensPath ?? '${dir.path}/models/sensevoice-tokens.txt';
+
+      if (!await File(targetModelPath).exists() || !await File(targetTokensPath).exists()) {
+        return null;
+      }
+
+      sherpa_onnx.initBindings();
+
+      final senseVoice = sherpa_onnx.OfflineSenseVoiceModelConfig(
+        model: targetModelPath,
+        language: 'auto',
+        useInverseTextNormalization: true,
+      );
+
+      final modelConfig = sherpa_onnx.OfflineModelConfig(
+        senseVoice: senseVoice,
+        tokens: targetTokensPath,
+        numThreads: 2,
+        debug: false,
+      );
+
+      final config = sherpa_onnx.OfflineRecognizerConfig(
+        model: modelConfig,
+      );
+
+      _recognizer = sherpa_onnx.OfflineRecognizer(config);
+      _loadedModelPath = targetModelPath;
+      debugPrint('[SherpaOnnxAsrService] 本地 SenseVoice ASR 识别器加载成功并已常驻内存');
+      return _recognizer;
+    } catch (e) {
+      debugPrint('[SherpaOnnxAsrService] 识别器初始化失败: $e');
+      return null;
+    } finally {
+      _isInitializing = false;
+    }
+  }
+
+  /// 释放识别器资源
+  static void dispose() {
+    try {
+      _recognizer?.free();
+    } catch (_) {}
+    _recognizer = null;
+    _loadedModelPath = null;
+  }
+
+  /// 执行快速文本识别（复用常驻识别器）
+  static Future<String> decodeAudioFile(String audioFilePath) async {
+    final recognizer = await getRecognizer();
+    if (recognizer == null) {
+      throw Exception('本地 ASR 模型未找到。请前往「设置 → 离线模型管理」下载 SenseVoice 识别模型。');
+    }
+
+    final file = File(audioFilePath);
+    final bytes = await file.readAsBytes();
+
+    int sampleRate = 16000;
+    Uint8List pcmBytes;
+
+    if (audioFilePath.toLowerCase().endsWith('.wav') && bytes.length > 44) {
+      final byteData = ByteData.view(Uint8List.fromList(bytes).buffer);
+      sampleRate = byteData.getUint32(24, Endian.little);
+      int dataOffset = 44;
+      for (int i = 12; i < bytes.length - 8; i++) {
+        if (bytes[i] == 0x64 &&
+            bytes[i + 1] == 0x61 &&
+            bytes[i + 2] == 0x74 &&
+            bytes[i + 3] == 0x61) {
+          dataOffset = i + 8;
+          break;
+        }
+      }
+      pcmBytes = Uint8List.fromList(bytes.sublist(dataOffset));
+    } else {
+      pcmBytes = Uint8List.fromList(bytes);
+    }
+
+    final int16List = Int16List.view(
+      pcmBytes.buffer,
+      pcmBytes.offsetInBytes,
+      pcmBytes.lengthInBytes ~/ 2,
+    );
+    final float32List = Float32List(int16List.length);
+    for (int i = 0; i < int16List.length; i++) {
+      float32List[i] = int16List[i] / 32768.0;
+    }
+
+    final stream = recognizer.createStream();
+    try {
+      stream.acceptWaveform(samples: float32List, sampleRate: sampleRate);
+      recognizer.decode(stream);
+
+      final result = recognizer.getResult(stream);
+      return result.text.trim();
+    } finally {
+      stream.free();
+    }
   }
 }

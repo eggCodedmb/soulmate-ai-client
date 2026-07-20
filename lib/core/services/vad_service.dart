@@ -172,6 +172,13 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
       final segment = _vad!.front();
       _vad!.pop();
 
+      // 计算有效语音段的真实平均分贝，过滤低于噪声门限的环境音假触发
+      final segmentDb = AudioUtils.calculateDb(segment.samples);
+      if (segmentDb < LocalStorage.vadNoiseGateThreshold) {
+        debugPrint('[VadNotifier] 过滤环境杂音片段: 分贝 ($segmentDb dB) 低于噪声门门限 (${LocalStorage.vadNoiseGateThreshold} dB)');
+        continue;
+      }
+
       try {
         final tempDir = await getTemporaryDirectory();
         final filePath =
@@ -187,7 +194,7 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
         }
 
         state = state.copyWith(lastAudioPath: filePath);
-        break; // Only process the first segment
+        break; // 仅处理首条合规的人声片段
       } catch (e) {
         debugPrint('[VadNotifier] Error processing speech segment: $e');
       }
@@ -207,14 +214,7 @@ class VadNotifier extends AutoDisposeNotifier<VadState> {
       await _drainSpeechSegments();
 
       if (state.lastAudioPath == null) {
-        debugPrint('[VadNotifier] VAD did not detect segments on stop, using fallback');
-        final tempDir = await getTemporaryDirectory();
-        final filePath =
-            '${tempDir.path}/call_voice_fallback_${DateTime.now().millisecondsSinceEpoch}.wav';
-        final samples = _allSamples.isNotEmpty ? _allSamples : List<double>.filled(1600, 0.0);
-        final wavData = AudioUtils.samplesToWav(samples, 16000);
-        await File(filePath).writeAsBytes(wavData);
-        state = state.copyWith(lastAudioPath: filePath);
+        debugPrint('[VadNotifier] VAD 未检测到有效人声片段，忽略本次无声录音');
       }
     } catch (e) {
       debugPrint('[VadNotifier] stopListening error: $e');

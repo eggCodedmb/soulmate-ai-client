@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../constants/app_colors.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/reminder_scheduler_service.dart';
 
 /// Tab 配置
 class _TabConfig {
@@ -56,13 +55,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     ),
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(reminderSchedulerProvider).start();
-    });
-  }
+
 
   @override
   Widget build(BuildContext context) {

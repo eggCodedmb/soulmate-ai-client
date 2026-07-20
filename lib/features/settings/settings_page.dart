@@ -92,6 +92,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
     return '点击查看可用声音';
   }
 
+  String _ttsProviderSubtitle() {
+    switch (LocalStorage.ttsProviderType) {
+      case 'system':
+        return '系统默认 (系统 TTS)';
+      case 'mimo':
+        return 'Xiaomi MiMo (云端)';
+      case 'voicebox':
+        return 'Voicebox (本地)';
+      default:
+        return '系统默认 (系统 TTS)';
+    }
+  }
+
   String _asrProviderSubtitle() {
     switch (LocalStorage.asrProviderType) {
       case 'sherpa_onnx':
@@ -243,53 +256,53 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                               icon: Icons.business_rounded,
                               iconColor: const Color(0xFF9C27B0),
                               title: 'TTS 服务商',
-                              subtitle: LocalStorage.ttsProviderType == 'mimo'
-                                  ? 'Xiaomi MiMo (云端)'
-                                  : 'Voicebox (本地)',
+                              subtitle: _ttsProviderSubtitle(),
                               onTap: () => showTtsProviderDialog(
                                 context,
                                 onSaved: () => setStateSection(() {}),
                               ),
                             ),
-                            const SettingMenuDivider(),
-                            SettingMenuItem(
-                              icon: Icons.dns_outlined,
-                              iconColor: const Color(0xFF7C4DFF),
-                              title: 'TTS 服务器地址',
-                              subtitle: LocalStorage.ttsBaseUrl ?? '未配置',
-                              onTap: () => showTtsUrlDialog(
-                                context,
-                                ref,
-                                onSaved: () => setStateSection(() {}),
-                              ),
-                            ),
-                            if (LocalStorage.ttsProviderType == 'mimo') ...[
+                            if (LocalStorage.ttsProviderType != 'system') ...[
                               const SettingMenuDivider(),
                               SettingMenuItem(
-                                icon: Icons.vpn_key_outlined,
-                                iconColor: const Color(0xFFFF9800),
-                                title: 'API Key',
-                                subtitle:
-                                    (LocalStorage.ttsApiKey == null ||
-                                        LocalStorage.ttsApiKey!.isEmpty)
-                                    ? '未配置'
-                                    : '已配置 (已隐藏)',
-                                onTap: () => showTtsApiKeyDialog(
+                                icon: Icons.dns_outlined,
+                                iconColor: const Color(0xFF7C4DFF),
+                                title: 'TTS 服务器地址',
+                                subtitle: LocalStorage.ttsBaseUrl ?? '未配置',
+                                onTap: () => showTtsUrlDialog(
                                   context,
+                                  ref,
                                   onSaved: () => setStateSection(() {}),
                                 ),
                               ),
-                              const SettingMenuDivider(),
-                              SettingMenuItem(
-                                icon: Icons.smart_toy_outlined,
-                                iconColor: const Color(0xFF4CAF50),
-                                title: '模型名称',
-                                subtitle: LocalStorage.ttsModel,
-                                onTap: () => showTtsModelDialog(
-                                  context,
-                                  onSaved: () => setStateSection(() {}),
+                              if (LocalStorage.ttsProviderType == 'mimo') ...[
+                                const SettingMenuDivider(),
+                                SettingMenuItem(
+                                  icon: Icons.vpn_key_outlined,
+                                  iconColor: const Color(0xFFFF9800),
+                                  title: 'API Key',
+                                  subtitle:
+                                      (LocalStorage.ttsApiKey == null ||
+                                          LocalStorage.ttsApiKey!.isEmpty)
+                                      ? '未配置'
+                                      : '已配置 (已隐藏)',
+                                  onTap: () => showTtsApiKeyDialog(
+                                    context,
+                                    onSaved: () => setStateSection(() {}),
+                                  ),
                                 ),
-                              ),
+                                const SettingMenuDivider(),
+                                SettingMenuItem(
+                                  icon: Icons.smart_toy_outlined,
+                                  iconColor: const Color(0xFF4CAF50),
+                                  title: '模型名称',
+                                  subtitle: LocalStorage.ttsModel,
+                                  onTap: () => showTtsModelDialog(
+                                    context,
+                                    onSaved: () => setStateSection(() {}),
+                                  ),
+                                ),
+                              ],
                             ],
                             const SettingMenuDivider(),
                             SettingMenuItem(

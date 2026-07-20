@@ -13,7 +13,6 @@ import '../../shared/models/memory_stats.dart';
 import '../../shared/models/page_result.dart';
 import '../../shared/models/subscription.dart';
 import '../../shared/models/subscription_status.dart';
-import '../../shared/models/reminder.dart';
 import 'api_client.dart';
 
 // Import module mixins
@@ -26,7 +25,6 @@ import 'modules/subscription_api.dart';
 import 'modules/payment_api.dart';
 import 'modules/asr_api.dart';
 import 'modules/file_api.dart';
-import 'modules/reminder_api.dart';
 
 // Export module mixins so any file importing api_service.dart also sees the mixins
 export 'modules/auth_api.dart';
@@ -38,7 +36,6 @@ export 'modules/subscription_api.dart';
 export 'modules/payment_api.dart';
 export 'modules/asr_api.dart';
 export 'modules/file_api.dart';
-export 'modules/reminder_api.dart';
 
 /// API 异常
 class ApiException implements Exception {
@@ -69,8 +66,7 @@ class ApiService with
     SubscriptionMixin,
     PaymentMixin,
     AsrMixin,
-    FileMixin,
-    ReminderMixin {
+    FileMixin {
   final Dio _dio;
 
   ApiService(this._dio);

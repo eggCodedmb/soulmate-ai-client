@@ -104,9 +104,13 @@ class TtsApiClient {
 
   /// 获取或创建 Dio 实例，如果配置变化则重新创建
   Dio? _getDio() {
-    final baseUrl = LocalStorage.ttsBaseUrl;
+    var baseUrl = LocalStorage.ttsBaseUrl;
     final providerType = LocalStorage.ttsProviderType;
     final apiKey = LocalStorage.ttsApiKey;
+
+    if (providerType == 'system' && (baseUrl == null || baseUrl.isEmpty)) {
+      baseUrl = LocalStorage.apiBaseUrl;
+    }
 
     if (baseUrl == null || baseUrl.isEmpty) {
       return null;
@@ -156,9 +160,10 @@ class TtsApiClient {
 
   /// TTS 服务器是否已配置
   bool get isConfigured {
+    final type = LocalStorage.ttsProviderType;
+    if (type == 'system') return true;
     final url = LocalStorage.ttsBaseUrl;
     if (url == null || url.isEmpty) return false;
-    final type = LocalStorage.ttsProviderType;
     if (type == 'mimo') {
       final apiKey = LocalStorage.ttsApiKey;
       return apiKey != null && apiKey.isNotEmpty;
@@ -168,7 +173,8 @@ class TtsApiClient {
 
   /// 获取所有声音档案
   Future<List<VoiceProfile>> getProfiles() async {
-    if (LocalStorage.ttsProviderType == 'mimo') {
+    final type = LocalStorage.ttsProviderType;
+    if (type == 'mimo' || type == 'system') {
       return mimoPresetProfiles;
     }
 
@@ -292,11 +298,12 @@ class TtsApiClient {
 
     int retryCount = 0;
     const int maxRetries = 3;
+    final endpoint = providerType == 'system' ? '/tts/generate' : '/generate';
 
     while (true) {
       try {
         final response = await dio.post<List<int>>(
-          '/generate',
+          endpoint,
           data: request.toJson(),
           options: Options(
             responseType: ResponseType.bytes,
@@ -305,6 +312,19 @@ class TtsApiClient {
         );
         return Uint8List.fromList(response.data!);
       } on DioException catch (e) {
+        if (e.response?.statusCode == 404 && providerType == 'system') {
+          try {
+            final altResp = await dio.post<List<int>>(
+              '/generate',
+              data: request.toJson(),
+              options: Options(
+                responseType: ResponseType.bytes,
+                receiveTimeout: const Duration(seconds: 120),
+              ),
+            );
+            return Uint8List.fromList(altResp.data!);
+          } catch (_) {}
+        }
         if (e.response?.statusCode == 429 && retryCount < maxRetries) {
           retryCount++;
           final delay = Duration(seconds: math.pow(2, retryCount - 1).toInt());
@@ -333,10 +353,11 @@ class TtsApiClient {
       throw TtsApiException('TTS 服务器未配置，请在设置中配置 TTS 服务器地址');
     }
 
-    // 对于流式接口，如果开始传输后报错 429 较难重试，这里仅在初始连接阶段处理 429
+    final endpoint = providerType == 'system' ? '/tts/generate/stream' : '/generate/stream';
+
     try {
       final response = await dio.post<ResponseBody>(
-        '/generate/stream',
+        endpoint,
         data: request.toJson(),
         options: Options(
           responseType: ResponseType.stream,
@@ -372,7 +393,13 @@ class TtsApiClient {
         yield Uint8List.fromList(chunk);
       }
     } on DioException catch (e) {
-      // 流式接口目前不实现重试逻辑，因为部分数据可能已经 yield 过了
+      if (e.response?.statusCode == 404 && providerType == 'system') {
+        try {
+          final bytes = await generate(request);
+          yield bytes;
+          return;
+        } catch (_) {}
+      }
       throw TtsApiException(_formatError(e));
     }
   }

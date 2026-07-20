@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../network/api_client.dart';
 
 /// 本地存储服务 - 存储用户偏好设置、简单配置
 class LocalStorage {
@@ -126,8 +127,8 @@ class LocalStorage {
 
   // ==================== TTS 配置 ====================
 
-  /// TTS 服务商类型 (voicebox 或 mimo)
-  static String get ttsProviderType => _prefs.getString('tts_provider_type') ?? 'voicebox';
+  /// TTS 服务商类型 ('system'、'voicebox' 或 'mimo')
+  static String get ttsProviderType => _prefs.getString('tts_provider_type') ?? 'system';
   static Future<void> setTtsProviderType(String type) async {
     await _prefs.setString('tts_provider_type', type);
   }
@@ -256,24 +257,29 @@ class LocalStorage {
     await _prefs.setString('local_server_url', url);
   }
 
+  /// 获取当前有效的 API Base URL
+  static String get apiBaseUrl => serverType == 'online'
+      ? ApiClient.primaryBaseUrl
+      : localServerUrl;
+
   // ==================== VAD 语音检测配置 ====================
 
-  /// VAD 判定阈值 (0.1 ~ 0.9)
-  static double get vadThreshold => _prefs.getDouble('vad_threshold') ?? 0.65;
+  /// VAD 判定阈值 (0.1 ~ 0.9，默认 0.75 提高对杂音的识别免疫)
+  static double get vadThreshold => _prefs.getDouble('vad_threshold') ?? 0.75;
   static Future<void> setVadThreshold(double value) async {
     await _prefs.setDouble('vad_threshold', value);
   }
 
-  /// VAD 静音判定时长 (0.3 ~ 2.0 秒)
+  /// VAD 静音判定时长 (0.3 ~ 2.0 秒，默认 0.65 秒快速截断)
   static double get vadMinSilenceDuration =>
-      _prefs.getDouble('vad_min_silence_duration') ?? 1.2;
+      _prefs.getDouble('vad_min_silence_duration') ?? 0.65;
   static Future<void> setVadMinSilenceDuration(double value) async {
     await _prefs.setDouble('vad_min_silence_duration', value);
   }
 
-  /// VAD 最小说话时长 (0.05 ~ 1.0 秒)
+  /// VAD 最小说话时长 (0.05 ~ 1.0 秒，默认 0.30s 过滤短脉冲杂音)
   static double get vadMinSpeechDuration =>
-      _prefs.getDouble('vad_min_speech_duration') ?? 0.25;
+      _prefs.getDouble('vad_min_speech_duration') ?? 0.30;
   static Future<void> setVadMinSpeechDuration(double value) async {
     await _prefs.setDouble('vad_min_speech_duration', value);
   }
@@ -285,9 +291,9 @@ class LocalStorage {
     await _prefs.setString('vad_model_version', value);
   }
 
-  /// VAD 噪声过滤门限 (-100.0 ~ -20.0 dBFS)
+  /// VAD 噪声过滤门限 (-100.0 ~ -20.0 dBFS，默认 -36.0 dBFS 强效屏蔽背景杂音)
   static double get vadNoiseGateThreshold =>
-      _prefs.getDouble('vad_noise_gate_threshold') ?? -42.0;
+      _prefs.getDouble('vad_noise_gate_threshold') ?? -36.0;
   static Future<void> setVadNoiseGateThreshold(double value) async {
     await _prefs.setDouble('vad_noise_gate_threshold', value);
   }

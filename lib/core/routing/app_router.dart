@@ -14,10 +14,7 @@ import '../../features/settings/settings_page.dart';
 import '../../features/subscription/subscription_page.dart';
 import '../../features/memory/memory_page.dart';
 import '../../features/splash/splash_page.dart';
-import '../../features/profile/reminder_list_page.dart';
-import '../../features/profile/reminder_edit_page.dart';
 import '../../features/chat/incoming_call_page.dart';
-import '../../shared/models/reminder.dart';
 import '../storage/secure_storage.dart';
 import '../storage/local_storage.dart';
 import 'main_scaffold.dart';
@@ -54,15 +51,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       // 来电全屏页面
       GoRoute(
-        path: '/call/:reminderId',
+        path: '/call',
         builder: (context, state) {
-          final reminderId = int.parse(state.pathParameters['reminderId']!);
-          final reminder = state.extra as Reminder?;
+          final companionId = int.parse(state.uri.queryParameters['companionId'] ?? '0');
           final isOutgoing = state.uri.queryParameters['outgoing'] == 'true';
           final conversationId = int.tryParse(state.uri.queryParameters['conversationId'] ?? '');
           return IncomingCallPage(
-            reminderId: reminderId,
-            reminder: reminder,
+            companionId: companionId,
             isOutgoing: isOutgoing,
             conversationId: conversationId,
           );
@@ -141,19 +136,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'memories',
                     builder: (context, state) => const MemoryPage(),
-                  ),
-                  GoRoute(
-                    path: 'reminders',
-                    builder: (context, state) => const ReminderListPage(),
-                    routes: [
-                      GoRoute(
-                        path: 'edit',
-                        builder: (context, state) {
-                          final reminder = state.extra as Reminder?;
-                          return ReminderEditPage(reminder: reminder);
-                        },
-                      ),
-                    ],
                   ),
                 ],
               ),
