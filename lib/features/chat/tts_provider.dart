@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/tts_api_client.dart';
+import '../../core/storage/local_storage.dart';
 import '../../shared/models/tts_config.dart';
 import 'tts_audio_service.dart';
 
@@ -30,22 +31,26 @@ class MessageTtsEntry {
   final MessageTtsStatus status;
   final String? audioPath;
   final String? error;
+  final String? text;
 
   const MessageTtsEntry({
     this.status = MessageTtsStatus.none,
     this.audioPath,
     this.error,
+    this.text,
   });
 
   MessageTtsEntry copyWith({
     MessageTtsStatus? status,
     String? audioPath,
     String? error,
+    String? text,
   }) {
     return MessageTtsEntry(
       status: status ?? this.status,
       audioPath: audioPath ?? this.audioPath,
-      error: error,
+      error: error ?? this.error,
+      text: text ?? this.text,
     );
   }
 }
@@ -251,6 +256,18 @@ class TtsNotifier extends StateNotifier<TtsState> {
     final svc = _audioService;
     if (svc == null || !svc.isConfigured) return;
 
+    if (LocalStorage.ttsProviderType == 'system') {
+      _updateMessageState(effectiveKey, MessageTtsEntry(
+        status: MessageTtsStatus.ready,
+        audioPath: 'system',
+        text: text,
+      ));
+      if (autoPlay) {
+        await svc.speakSystemTts(text, effectiveKey);
+      }
+      return;
+    }
+
     final currentEntry = state.getMessageState(effectiveKey);
     if (currentEntry.status == MessageTtsStatus.ready || 
         currentEntry.status == MessageTtsStatus.playing) {
@@ -398,6 +415,14 @@ class TtsNotifier extends StateNotifier<TtsState> {
         messageStates: newMap,
         playingMessageKey: messageKey,
       );
+    }
+
+    if (LocalStorage.ttsProviderType == 'system' || entry.audioPath == 'system') {
+      final msgText = entry.text;
+      if (msgText != null && msgText.isNotEmpty) {
+        await svc.speakSystemTts(msgText, messageKey);
+      }
+      return;
     }
 
     // svc.play() 内部 _stopSilently → 不触发回调 → 状态不会被重置

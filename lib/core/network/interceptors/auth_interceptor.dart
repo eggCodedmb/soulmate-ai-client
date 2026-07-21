@@ -1,12 +1,14 @@
+import 'package:flutter/widgets.dart';
 import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
 import '../../storage/secure_storage.dart';
 import '../../routing/app_router.dart';
 
-/// 认证拦截器 - JWT Token自动注入 + 过期自动刷新与跳转登录
+/// 认证拦截器 - JWT Token自动注入 + 过期自动跳转登录
 class AuthInterceptor extends Interceptor {
   // ignore: unused_field
   final Dio _dio;
+  static bool _isHandlingAuthFailure = false;
 
   AuthInterceptor(this._dio);
 
@@ -17,7 +19,7 @@ class AuthInterceptor extends Interceptor {
   ) async {
     // 从安全存储获取Token
     final token = await SecureStorage.getToken();
-    if (token != null) {
+    if (token != null && token.isNotEmpty) {
       options.headers['Authorization'] = 'Bearer $token';
     }
     handler.next(options);
@@ -29,9 +31,8 @@ class AuthInterceptor extends Interceptor {
     if (data is Map<String, dynamic>) {
       final code = data['code'] as int? ?? 0;
       // 1001: 未登录/过期, 1003: Token无效, 1004: Token已过期, 3001: 用户不存在/Token过期
-      if (code == 1001 || code == 1003 || code == 1004 || code == 3001) {
-        await SecureStorage.clearTokens();
-        rootNavigatorKey.currentContext?.go('/auth');
+      if (_isAuthErrorCode(code)) {
+        await _handleAuthFailure();
         handler.reject(
           DioException(
             requestOptions: response.requestOptions,
@@ -48,24 +49,36 @@ class AuthInterceptor extends Interceptor {
 
   @override
   Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
-    if (err.response?.statusCode == 401) {
-      // Token过期，尝试刷新
-      try {
-        final refreshToken = await SecureStorage.getRefreshToken();
-        if (refreshToken != null) {
-          // TODO: 实现Token刷新逻辑
-          // final response = await _dio.post('/api/auth/refresh', data: {'refreshToken': refreshToken});
-          // await SecureStorage.saveToken(response.data['token']);
-          // 重新发起请求
-          // final retryResponse = await _dio.fetch(err.requestOptions);
-          // return handler.resolve(retryResponse);
-        }
-      } catch (e) {
-        // 刷新失败，清除Token并跳转登录
-        await SecureStorage.clearTokens();
-        rootNavigatorKey.currentContext?.go('/auth');
-      }
+    final statusCode = err.response?.statusCode;
+    final data = err.response?.data;
+    int code = 0;
+    if (data is Map<String, dynamic>) {
+      code = data['code'] as int? ?? 0;
+    }
+
+    if (statusCode == 401 || _isAuthErrorCode(code)) {
+      await _handleAuthFailure();
     }
     handler.next(err);
   }
+
+  bool _isAuthErrorCode(int code) {
+    return code == 1001 || code == 1003 || code == 1004 || code == 3001;
+  }
+
+  Future<void> _handleAuthFailure() async {
+    await SecureStorage.clearTokens();
+
+    if (_isHandlingAuthFailure) return;
+    _isHandlingAuthFailure = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = rootNavigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        context.go('/auth');
+      }
+      _isHandlingAuthFailure = false;
+    });
+  }
 }
+

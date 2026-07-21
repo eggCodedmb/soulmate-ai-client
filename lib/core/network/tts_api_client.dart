@@ -108,7 +108,7 @@ class TtsApiClient {
     final providerType = LocalStorage.ttsProviderType;
     final apiKey = LocalStorage.ttsApiKey;
 
-    if (providerType == 'system' && (baseUrl == null || baseUrl.isEmpty)) {
+    if (providerType == 'official' && (baseUrl == null || baseUrl.isEmpty)) {
       baseUrl = LocalStorage.apiBaseUrl;
     }
 
@@ -161,7 +161,7 @@ class TtsApiClient {
   /// TTS 服务器是否已配置
   bool get isConfigured {
     final type = LocalStorage.ttsProviderType;
-    if (type == 'system') return true;
+    if (type == 'official' || type == 'system') return true;
     final url = LocalStorage.ttsBaseUrl;
     if (url == null || url.isEmpty) return false;
     if (type == 'mimo') {
@@ -174,8 +174,23 @@ class TtsApiClient {
   /// 获取所有声音档案
   Future<List<VoiceProfile>> getProfiles() async {
     final type = LocalStorage.ttsProviderType;
-    if (type == 'mimo' || type == 'system') {
+    if (type == 'mimo' || type == 'official') {
       return mimoPresetProfiles;
+    }
+
+    if (type == 'system') {
+      return [
+        VoiceProfile(
+          id: 'system_default',
+          name: '手机系统默认音色',
+          language: 'zh',
+          voiceType: 'preset',
+          defaultEngine: 'system',
+          description: '使用手机设备原生离线 TTS 引擎朗读',
+          createdAt: '',
+          updatedAt: '',
+        ),
+      ];
     }
 
     final dio = _getDio();
@@ -291,6 +306,11 @@ class TtsApiClient {
       return generateMimo(request);
     }
 
+    if (providerType == 'system') {
+      // 手机系统 TTS 使用设备原生引擎直接发声，不进行网络文件合成
+      return Uint8List(0);
+    }
+
     final dio = _getDio();
     if (dio == null) {
       throw TtsApiException('TTS 服务器未配置，请在设置中配置 TTS 服务器地址');
@@ -298,7 +318,7 @@ class TtsApiClient {
 
     int retryCount = 0;
     const int maxRetries = 3;
-    final endpoint = providerType == 'system' ? '/tts/generate' : '/generate';
+    final endpoint = providerType == 'official' ? '/tts/generate' : '/generate';
 
     while (true) {
       try {
@@ -312,7 +332,7 @@ class TtsApiClient {
         );
         return Uint8List.fromList(response.data!);
       } on DioException catch (e) {
-        if (e.response?.statusCode == 404 && providerType == 'system') {
+        if (e.response?.statusCode == 404 && providerType == 'official') {
           try {
             final altResp = await dio.post<List<int>>(
               '/generate',
@@ -348,12 +368,17 @@ class TtsApiClient {
       return;
     }
 
+    if (providerType == 'system') {
+      // 手机系统 TTS 无需 HTTP 音频流
+      return;
+    }
+
     final dio = _getDio();
     if (dio == null) {
       throw TtsApiException('TTS 服务器未配置，请在设置中配置 TTS 服务器地址');
     }
 
-    final endpoint = providerType == 'system' ? '/tts/generate/stream' : '/generate/stream';
+    final endpoint = providerType == 'official' ? '/tts/generate/stream' : '/generate/stream';
 
     try {
       final response = await dio.post<ResponseBody>(

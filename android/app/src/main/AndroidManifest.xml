@@ -43,6 +43,10 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- TTS 语音合成服务 -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
         <!-- 支付宝 -->
         <intent>
             <action android:name="android.intent.action.VIEW" />

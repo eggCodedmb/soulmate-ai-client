@@ -94,14 +94,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
 
   String _ttsProviderSubtitle() {
     switch (LocalStorage.ttsProviderType) {
+      case 'official':
+        return '官方 TTS (推荐)';
       case 'system':
-        return '系统默认 (系统 TTS)';
+        return '系统 TTS (离线)';
       case 'mimo':
         return 'Xiaomi MiMo (云端)';
       case 'voicebox':
         return 'Voicebox (本地)';
       default:
-        return '系统默认 (系统 TTS)';
+        return '官方 TTS (推荐)';
     }
   }
 
@@ -262,7 +264,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                                 onSaved: () => setStateSection(() {}),
                               ),
                             ),
-                            if (LocalStorage.ttsProviderType != 'system') ...[
+                            if (LocalStorage.ttsProviderType != 'official' &&
+                                LocalStorage.ttsProviderType != 'system') ...[
                               const SettingMenuDivider(),
                               SettingMenuItem(
                                 icon: Icons.dns_outlined,

@@ -48,6 +48,7 @@ dependencies:
   record: ^7.1.1
   audio_session: ^0.1.25
   http: ^1.2.0
+  flutter_tts: ^4.2.2
 
   # Voice Activity Detection
   sherpa_onnx: ^1.13.3

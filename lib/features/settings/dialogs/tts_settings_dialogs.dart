@@ -50,8 +50,19 @@ void showTtsProviderDialog(
           _buildProviderOption(
             context,
             icon: Icons.dns_outlined,
-            title: '系统默认 (系统 TTS)',
-            subtitle: '使用后端内置的语音合成服务（推荐）',
+            title: '官方 TTS (推荐)',
+            subtitle: '使用官方后端内置的语音合成服务',
+            value: 'official',
+            isSelected: currentProvider == 'official',
+            isDark: isDark,
+            onSaved: onSaved,
+          ),
+          const SizedBox(height: 12),
+          _buildProviderOption(
+            context,
+            icon: Icons.phone_android_rounded,
+            title: '系统 TTS (离线)',
+            subtitle: '使用手机系统自带的语音合成引擎',
             value: 'system',
             isSelected: currentProvider == 'system',
             isDark: isDark,
@@ -103,8 +114,8 @@ Widget _buildProviderOption(
 
       // 自动适配默认地址
       final currentUrl = LocalStorage.ttsBaseUrl;
-      if (value == 'system') {
-        // 系统默认使用后端核心 API 地址或无需重载
+      if (value == 'official' || value == 'system') {
+        // 官方与系统默认使用后端 API 地址或离线原生引擎
       } else if (value == 'mimo') {
         if (currentUrl == null ||
             currentUrl.isEmpty ||

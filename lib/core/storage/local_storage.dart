@@ -127,8 +127,8 @@ class LocalStorage {
 
   // ==================== TTS 配置 ====================
 
-  /// TTS 服务商类型 ('system'、'voicebox' 或 'mimo')
-  static String get ttsProviderType => _prefs.getString('tts_provider_type') ?? 'system';
+  /// TTS 服务商类型 ('official'官方后端、'system'手机系统自带、'voicebox'或'mimo')
+  static String get ttsProviderType => _prefs.getString('tts_provider_type') ?? 'official';
   static Future<void> setTtsProviderType(String type) async {
     await _prefs.setString('tts_provider_type', type);
   }

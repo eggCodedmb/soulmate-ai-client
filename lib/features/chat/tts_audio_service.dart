@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_sound/flutter_sound.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/network/tts_api_client.dart';
@@ -18,6 +19,7 @@ enum ProcessingState { idle, loading, buffering, ready, completed }
 class TtsAudioService {
   final TtsApiClient _api;
   final FlutterSoundPlayer _player = FlutterSoundPlayer();
+  final FlutterTts _flutterTts = FlutterTts();
 
   /// 音频缓存目录
   Directory? _cacheDir;
@@ -54,6 +56,24 @@ class TtsAudioService {
         .catchError((e) {
           debugPrint('[TTS] Failed to open FlutterSoundPlayer: $e');
         });
+
+    _flutterTts.setCompletionHandler(() {
+      debugPrint('[TTS] 手机系统 Native TTS 播放完成');
+      _isPlaying = false;
+      _processingState = ProcessingState.completed;
+      _notifyStateChanged();
+    });
+    _flutterTts.setCancelHandler(() {
+      _isPlaying = false;
+      _processingState = ProcessingState.idle;
+      _notifyStateChanged();
+    });
+    _flutterTts.setErrorHandler((msg) {
+      debugPrint('[TTS] 手机系统 Native TTS 发生错误: $msg');
+      _isPlaying = false;
+      _processingState = ProcessingState.idle;
+      _notifyStateChanged();
+    });
   }
 
   bool get isPlaying => _isPlaying;
@@ -322,10 +342,68 @@ class TtsAudioService {
     }
   }
 
+  bool _ttsInitialized = false;
+
+  /// 初始化 Native 系统 TTS 配置
+  Future<void> _initFlutterTts() async {
+    if (_ttsInitialized) return;
+    try {
+      await _flutterTts.awaitSpeakCompletion(true);
+      await _flutterTts.setSpeechRate(0.5);
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.setPitch(1.0);
+      _ttsInitialized = true;
+    } catch (e) {
+      debugPrint('[TTS] 初始化 Native TTS 警告: $e');
+    }
+  }
+
+  /// 使用设备原生手机系统 TTS 朗读文本（离线）
+  Future<void> speakSystemTts(String text, String messageKey) async {
+    await _stopSilently();
+    _playingMessageKey = messageKey;
+    _isPlaying = true;
+    _processingState = ProcessingState.ready;
+    _notifyStateChanged();
+
+    try {
+      await _initFlutterTts();
+
+      try {
+        await _flutterTts.setLanguage('zh-CN');
+      } catch (_) {
+        try {
+          await _flutterTts.setLanguage('zh');
+        } catch (_) {}
+      }
+
+      final result = await _flutterTts.speak(text);
+      if (result == 0) {
+        debugPrint('[TTS] Native TTS 尚未完全 Bind，延迟 300ms 后进行二次唤醒');
+        await Future.delayed(const Duration(milliseconds: 300));
+        await _flutterTts.speak(text);
+      }
+    } catch (e) {
+      debugPrint('[TTS] 调用原生系统 TTS 异常: $e');
+      _isPlaying = false;
+      _processingState = ProcessingState.idle;
+      _notifyStateChanged();
+    }
+  }
+
+  /// 停止手机系统 Native TTS
+  Future<void> stopSystemTts() async {
+    if (!_ttsInitialized) return;
+    try {
+      await _flutterTts.stop();
+    } catch (_) {}
+  }
+
   /// 静默停止：重置内部状态但不触发回调
   /// 用于 play() 内部的清理，避免回调中错误地覆盖 provider 层刚设置的新消息状态
   Future<void> _stopSilently() async {
     _completionGuardTimer?.cancel();
+    await stopSystemTts();
     try {
       await _player.stopPlayer();
     } catch (_) {}
